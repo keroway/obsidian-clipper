@@ -50,7 +50,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`VAULT_PREFIX` は末尾スラッシュ必須または空文字**。`key` 組み立てが `${prefix}${folder}/${filename}` なので、`MyVault` だけだと `MyVaultInbox/...` になる。
 - **`INVALID_FILENAME_RE` (`/[\\\/:*?"<>|\[\]#^`]/`)** は macOS / Windows / Obsidian 全部で安全な共通部分集合。緩めない。
 - **時刻は JST 固定**。`jstStamp` / `jstIso` で `+9h` をオフセットしている。Worker は UTC で動くので `Date` を直接フォーマットしないこと。
-- TypeScript strict / Wrangler v3 / Hono ^4 を維持 (HANDOFF 記載の前提)。
+- TypeScript strict / Wrangler v4 / Hono ^4 を維持 (HANDOFF 記載の前提)。
+- **Wrangler v4 から `wrangler kv` / `wrangler r2` 系はデフォルト local モード**。本番 R2/KV を直接操作するときは `--remote` を明示する (例: `bunx wrangler r2 object get VAULT/Inbox/foo.md --remote`)。`dev` / `deploy` / `tail` / `secret` は従来通り。
 
 ## ファイル地図
 

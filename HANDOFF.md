@@ -59,7 +59,7 @@
 > - 着手前に上記から優先度上位 1-2 件を選び、ADR を書いてから実装。
 > - 既存 frontmatter スキーマ (`source`, `source_url`, `source_title`, `tags`, `summary`)
 >   は Keep 移行スクリプトと共通なので互換を壊さないこと。
-> - Wrangler v3, hono ^4, TypeScript strict 維持。
+> - Wrangler v4, hono ^4, TypeScript strict 維持。
 > - 動作確認は wrangler dev + curl の最小ループで OK。
 
 ---
