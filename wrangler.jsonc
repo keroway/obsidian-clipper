@@ -1,0 +1,46 @@
+{
+  // ───────────────────────────────────────────────────────────────────────────
+  // obsidian-clipper Worker
+  //
+  // 事前準備:
+  //   1. Cloudflare アカウントにログイン:  bunx wrangler login
+  //   2. R2 バケットは Remotely Save で使っているものをそのまま流用する。
+  //      バケット名を下の "bucket_name" に書き込むこと。
+  //   3. Vault が R2 上で "MyVault/" のような prefix を持つなら "VAULT_PREFIX"
+  //      に同じ値を入れる(末尾スラッシュ必須)。prefix なしなら "" のまま。
+  //   4. 共有シークレット:  bunx wrangler secret put SHARED_SECRET
+  //   5. デプロイ:  bunx wrangler deploy
+  // ───────────────────────────────────────────────────────────────────────────
+  "name": "obsidian-clipper",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "r2_buckets": [
+    {
+      "binding": "VAULT",
+      "bucket_name": "REPLACE_WITH_YOUR_R2_BUCKET_NAME"
+    }
+  ],
+
+  // Workers AI (要約) を使う場合のバインディング。
+  // 使わない場合は ENABLE_SUMMARY="false" にすれば AI 呼び出しはスキップされる。
+  "ai": {
+    "binding": "AI"
+  },
+
+  "vars": {
+    // Remotely Save のバケット内 prefix。例: "MyVault/" / 無いなら ""
+    "VAULT_PREFIX": "",
+    // 保存先サブフォルダ。Vault ルートからの相対パス
+    "INBOX_FOLDER": "Inbox",
+    // 要約を有効化するか
+    "ENABLE_SUMMARY": "true",
+    // 要約に使う Workers AI モデル。日本語品質に不満が出たら別モデルへ
+    "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
