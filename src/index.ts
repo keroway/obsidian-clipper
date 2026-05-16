@@ -11,6 +11,7 @@
  */
 
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { bearerAuth } from 'hono/bearer-auth'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
@@ -59,8 +60,12 @@ app.use(
   }),
 )
 
-app.use('/clip', (c, next) =>
-  bearerAuth({ token: c.env.SHARED_SECRET })(c, next),
+app.use(
+  '/clip',
+  bearerAuth({
+    verifyToken: (token: string, c: Context<{ Bindings: Bindings }>) =>
+      token === c.env.SHARED_SECRET,
+  }),
 )
 
 app.post('/clip', async (c) => {

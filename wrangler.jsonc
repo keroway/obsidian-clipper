@@ -19,7 +19,7 @@
   "r2_buckets": [
     {
       "binding": "VAULT",
-      "bucket_name": "REPLACE_WITH_YOUR_R2_BUCKET_NAME"
+      "bucket_name": "obsidian-sync"
     }
   ],
 
