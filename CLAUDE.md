@@ -16,6 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `bun run deploy` — `wrangler deploy`
 - `bun run tail` — `wrangler tail` で本番ログ
 - `bunx wrangler secret put SHARED_SECRET` — Bearer 認証用シークレット投入
+- `bunx wrangler secret put JINA_API_KEY` — Jina Reader の API キー (任意。未設定でも動くが rate limit が緩くなる)
   (HANDOFF にある要約モデル切替 TODO を実装するなら `ANTHROPIC_API_KEY` も同様に投入)
 
 テストはまだ未導入。導入する場合は HANDOFF.md の指針 (vitest + `@cloudflare/vitest-pool-workers`、Jina / Workers AI は MSW 相当でモック) に従う。
@@ -26,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. `POST /clip` を Hono で受ける。`bearerAuth` で `SHARED_SECRET` を検証、CORS は `*` (ブックマークレット / iOS ショートカットから叩く前提)。
 2. `normalizeUrl()` で UTM / `gclid` / X の `?s` `?t` 等を除去し、`mobile.twitter.com` と `twitter.com` を `x.com` に揃える。許可リストは `TRACKING_PARAMS`。
-3. `https://r.jina.ai/<URL>` で本文 Markdown を取得 (無料・無認証)。
+3. `https://r.jina.ai/<URL>` で本文 Markdown を取得。`JINA_API_KEY` (secret) が設定されていれば `Authorization: Bearer` を付与して無料枠の rate limit を緩和する。未設定でも従来通り無認証で動作するが、初回から 429 に当たりやすいので推奨。
 4. `ENABLE_SUMMARY === 'true'` かつ本文 200 文字超なら `summarize()` で Workers AI (`SUMMARY_MODEL`, 既定 `@cf/meta/llama-3.1-8b-instruct`) に投げる。
 5. JST タイムスタンプ + サニタイズ済みタイトルで `YYYY-MM-DD_HHMMSS_<slug>.md` を組み立て、`${VAULT_PREFIX}${INBOX_FOLDER}/${filename}` を key として `c.env.VAULT.put`。
 6. Obsidian 側は Remotely Save が R2 を pull することでノートを取り込む (Worker は Obsidian に直接触らない)。

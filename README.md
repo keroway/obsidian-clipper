@@ -14,7 +14,7 @@ Obsidian は Remotely Save で R2 を pull するので、結果的に Vault に
 [Cloudflare Worker (Hono)]
    ├ Bearer 認証
    ├ URL 正規化 (UTM, X 共有 ?s, ?t などを除去)
-   ├ 本文取得: https://r.jina.ai/<URL>           (無料, 認証なし)
+   ├ 本文取得: https://r.jina.ai/<URL>           (JINA_API_KEY 任意, 無認証でも可)
    ├ 要約: Workers AI (任意, ENABLE_SUMMARY)
    └ frontmatter 付き Markdown を R2.put
         │
@@ -71,6 +71,18 @@ bunx wrangler secret put SHARED_SECRET
 
 長めのランダム文字列を 1 回だけ貼り付ける。あとでブックマークレットと iOS
 ショートカットの両方で同じ値を使う。
+
+### 4.5. (任意) Jina Reader API キーを登録
+
+無料・無認証でも動くが、初回から 429 (rate limit) を引きやすい。
+<https://jina.ai/api-dashboard/> でアカウントを作って API キーを取得し、
+Cloudflare 側にも secret として登録しておくと安定する。
+
+```bash
+bunx wrangler secret put JINA_API_KEY
+```
+
+未設定なら従来通り無認証で叩く (フォールバック)。
 
 ### 5. デプロイ
 
