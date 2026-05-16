@@ -24,6 +24,7 @@ type Bindings = {
   INBOX_FOLDER: string
   ENABLE_SUMMARY: string
   SUMMARY_MODEL: string
+  JINA_API_KEY?: string
 }
 
 type ClipBody = {
@@ -86,8 +87,12 @@ app.post('/clip', async (c) => {
   let articleTitle: string | undefined = payload.title?.trim() || undefined
   let fetchErr: string | undefined
   try {
+    const headers: Record<string, string> = { Accept: 'text/plain' }
+    if (c.env.JINA_API_KEY) {
+      headers.Authorization = `Bearer ${c.env.JINA_API_KEY}`
+    }
     const res = await fetch(`https://r.jina.ai/${url}`, {
-      headers: { Accept: 'text/plain' },
+      headers,
       cf: { cacheTtl: 0 },
     })
     if (res.ok) {
