@@ -37,7 +37,12 @@
     // 要約を有効化するか
     "ENABLE_SUMMARY": "true",
     // 要約に使う Workers AI モデル。日本語品質に不満が出たら別モデルへ
-    "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct"
+    "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
+    // 要約プロバイダ。"workers-ai" (既定) または "anthropic"。
+    // "anthropic" を選ぶ場合は ANTHROPIC_API_KEY を wrangler secret put で投入する。
+    "SUMMARY_PROVIDER": "workers-ai",
+    // Anthropic を使う場合のモデル ID。未指定なら Claude Haiku 4.5 を使用。
+    "ANTHROPIC_MODEL": "claude-haiku-4-5-20251001"
   },
 
   "observability": {
