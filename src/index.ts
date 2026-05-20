@@ -25,6 +25,9 @@ type Bindings = {
   ENABLE_SUMMARY: string
   SUMMARY_MODEL: string
   JINA_API_KEY?: string
+  SUMMARY_PROVIDER?: string
+  ANTHROPIC_API_KEY?: string
+  ANTHROPIC_MODEL?: string
 }
 
 type ClipBody = {
@@ -116,12 +119,7 @@ app.post('/clip', async (c) => {
     articleMd.length > 200
   ) {
     try {
-      summary = await summarize(
-        c.env.AI,
-        c.env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct',
-        articleMd,
-        articleTitle,
-      )
+      summary = await summarizeWithProvider(c.env, articleMd, articleTitle)
     } catch (e) {
       console.warn('summarize failed', (e as Error).message)
     }
@@ -248,29 +246,103 @@ function yamlEscape(s: string): string {
   return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
 
+// モデルのコンテキストに収めるため先頭を切り出す上限
+const SUMMARY_EXCERPT_LIMIT = 6000
+const SUMMARY_SYSTEM_PROMPT =
+  'あなたは技術記事を日本語で要約するアシスタントです。' +
+  '出力は3〜5文の散文で、最初の1文に結論を置き、専門用語はそのまま残してください。' +
+  '箇条書きや見出しは使わないでください。'
+const ANTHROPIC_DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
+const ANTHROPIC_TIMEOUT_MS = 30_000
+
+function buildSummaryUserPrompt(md: string, title: string | undefined): string {
+  const excerpt = md.slice(0, SUMMARY_EXCERPT_LIMIT)
+  return [title ? `タイトル: ${title}` : '', '本文:', excerpt]
+    .filter(Boolean)
+    .join('\n')
+}
+
+async function summarizeWithProvider(
+  env: Bindings,
+  md: string,
+  title: string | undefined,
+): Promise<string> {
+  const workersAiModel = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct'
+  if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
+    const anthropicModel = env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL
+    try {
+      return await summarizeWithAnthropic(
+        env.ANTHROPIC_API_KEY,
+        anthropicModel,
+        md,
+        title,
+      )
+    } catch (e) {
+      // Anthropic 失敗時は 1 回だけ workers-ai にフォールバック (ループは作らない)
+      console.warn(
+        'anthropic summarize failed, falling back to workers-ai',
+        (e as Error).message,
+      )
+      return await summarize(env.AI, workersAiModel, md, title)
+    }
+  }
+  return await summarize(env.AI, workersAiModel, md, title)
+}
+
 async function summarize(
   ai: Ai,
   model: string,
   md: string,
   title: string | undefined,
 ): Promise<string> {
-  // モデルのコンテキストに収めるため先頭を切り出す
-  const excerpt = md.slice(0, 6000)
-  const system =
-    'あなたは技術記事を日本語で要約するアシスタントです。' +
-    '出力は3〜5文の散文で、最初の1文に結論を置き、専門用語はそのまま残してください。' +
-    '箇条書きや見出しは使わないでください。'
-  const user = [title ? `タイトル: ${title}` : '', '本文:', excerpt]
-    .filter(Boolean)
-    .join('\n')
   const r = (await ai.run(model as Parameters<Ai['run']>[0], {
     messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
+      { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+      { role: 'user', content: buildSummaryUserPrompt(md, title) },
     ],
     max_tokens: 300,
   } as never)) as { response?: string }
   return (r?.response ?? '').toString().trim()
+}
+
+async function summarizeWithAnthropic(
+  apiKey: string,
+  model: string,
+  md: string,
+  title: string | undefined,
+): Promise<string> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS)
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 300,
+        system: SUMMARY_SYSTEM_PROMPT,
+        messages: [
+          { role: 'user', content: buildSummaryUserPrompt(md, title) },
+        ],
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`anthropic ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+    }
+    const data = (await res.json()) as {
+      content?: Array<{ type: string; text?: string }>
+    }
+    const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
+    return text.trim()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function renderNote(opts: {

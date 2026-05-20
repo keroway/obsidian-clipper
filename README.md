@@ -84,6 +84,24 @@ bunx wrangler secret put JINA_API_KEY
 
 未設定なら従来通り無認証で叩く (フォールバック)。
 
+### 4.6. (任意) Anthropic API キーを登録
+
+Workers AI (`@cf/meta/llama-3.1-8b-instruct`) の日本語要約品質に不満がある場合は、Anthropic
+Claude にプロバイダを切り替えられる。`SUMMARY_PROVIDER` 未設定または `workers-ai` の場合は
+従来通り Workers AI を使う (互換)。
+
+```bash
+bunx wrangler secret put ANTHROPIC_API_KEY
+```
+
+切替は `wrangler.jsonc` の `vars.SUMMARY_PROVIDER` を `"anthropic"` に変更してデプロイする。
+既定モデルは Claude Haiku 4.5 (`claude-haiku-4-5-20251001`)。`vars.ANTHROPIC_MODEL` で別モデル
+にも差し替え可能。
+
+Anthropic ルートが 4xx / 5xx / タイムアウト (30 秒) のいずれかで失敗した場合、自動的に
+Workers AI へ 1 回だけフォールバックする。要約自体が完全に失敗してもクリップ自体は成功扱い
+(本文セクションには取得結果がそのまま残る)。
+
 ### 5. デプロイ
 
 ```bash
