@@ -414,6 +414,34 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 - `SHARED_SECRET` を漏らした場合は `wrangler secret put SHARED_SECRET` で上書きすれば即時無効化されます (新シークレットを各クライアントに再配布)
 - CORS は `*` で開いています (ブックマークレットから叩く前提)。Bearer がないと弾かれるので実害はありませんが、気になる場合は `src/index.ts` の `cors({ origin: ... })` を絞ってください
 
+#### Secret 漏洩の検知
+
+Worker 用の secret (`SHARED_SECRET` / `JINA_API_KEY` / `ANTHROPIC_API_KEY`) は **Cloudflare Secrets** で管理し、リポジトリには絶対にコミットしない方針です。ローカル開発用の `.dev.vars` も `.gitignore` 済みです。
+
+その上で、誤コミットを多層で防ぐためにリポジトリ側で以下を有効化することを推奨します。GitHub UI 側の操作 (リポジトリオーナーのみ可能) は以下:
+
+1. **Settings → Code security → Secret protection** を開く
+2. **Secret scanning** を Enable
+3. **Push protection** を Enable (これで生 token を含む push 自体が GitHub 側でブロックされる)
+4. (任意) **Validity checks** を Enable: 検知された token が live かどうかも自動チェック
+
+CI 側では [`gitleaks`](https://github.com/gitleaks/gitleaks) を [`.github/workflows/gitleaks.yml`](./.github/workflows/gitleaks.yml) で push / PR / 週次に走らせています。GitHub 標準の Secret Scanning が拾わないパターン (独自 token など) もここで検知できます。
+
+#### サプライチェーン保護 (汚染パッケージ対策)
+
+npm パッケージは公開直後にマルウェアが紛れ込むことがあり、検知されるまで数時間〜数日かかります。これに備えて install 段階で **公開から 7 日経過していない version をブロック** する age gate を効かせています。
+
+- **Bun**: [`bunfig.toml`](./bunfig.toml) の `[install].minimumReleaseAge = 604800` (秒)
+- **npm**: [`.npmrc`](./.npmrc) の `minimum-release-age=10080` (分。npm 11.5.1+ が必要)
+
+緊急の zero-day patch を取り込みたい場合は、それぞれ `minimumReleaseAgeExcludes` / `minimum-release-age-exclude` にパッケージ名を追加します。
+
+その他のサプライチェーン関連の運用:
+
+- **lockfile (`bun.lock`) は必ずコミット**。`bun install --frozen-lockfile` を CI で走らせるので、勝手にバージョンが上がる経路は無い
+- **依存更新は [Dependabot](./.github/dependabot.yml) 経由のみ**。週次で `npm` / `github-actions` の 2 系統に PR が来るので、CI (`typecheck`) と Diff を見てマージする
+- **GitHub Actions は SHA ピン留め推奨**。Dependabot は SHA も更新してくれるので、本格化する場合は `gitleaks-action@v2` を SHA に切り替え
+
 ---
 
 ## 既知の制約
