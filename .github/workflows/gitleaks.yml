@@ -1,0 +1,45 @@
+name: secret-scan
+
+# gitleaks で commit / PR / 履歴に紛れ込んだ secret を検知する。
+# GitHub の Secret Scanning (Settings → Code security → Secret protection) と
+# 二重で回し、検出力を上げる狙い。
+# - push: main へのマージ直前にもう一度走らせる
+# - pull_request: PR 差分で検知できれば最速で気付ける
+# - schedule: 過去 commit / 履歴の再スキャンを週次で
+#
+# gitleaks/gitleaks-action は user-owned リポジトリは license 不要、
+# organization 配下では GITLEAKS_LICENSE secret が必要になる点に注意。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 履歴全体をスキャンするため fetch-depth=0 にする。
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # organization 配下に移動した場合のみ必要。user-owned では空でよい。
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
