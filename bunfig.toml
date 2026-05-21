@@ -1,0 +1,12 @@
+# Bun 設定。https://bun.sh/docs/runtime/bunfig
+#
+# 目的: サプライチェーン攻撃 (公開直後の悪意ある version を即取得してしまう)
+# を緩和するため、公開から 7 日経過していない npm 版を install 段階でブロックする。
+# - bun add / bun install / bun update に効く
+# - bun install --frozen-lockfile では既に固定された版を使うため age gate は無効
+#   (= CI でロックファイル整合性が保たれる)
+# - 7 日経たないと取れない緊急 patch (zero-day 等) が出た場合は
+#   minimumReleaseAgeExcludes にパッケージ名を追加して個別救済する
+[install]
+minimumReleaseAge = 604800  # 7 days in seconds
+minimumReleaseAgeExcludes = []
