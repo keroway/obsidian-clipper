@@ -1,0 +1,41 @@
+name: typecheck
+
+# main への push と PR で TypeScript の型チェックを走らせる。
+# Dependabot PR のチェック土台にもなる。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # frozen-lockfile で bun.lock の整合性も同時に検証する。
+      # bunfig.toml の minimumReleaseAge は frozen-lockfile では効かないが、
+      # ローカル/CI で同じ lockfile を使うことで「ローカルで通った age gate を
+      # CI でもそのまま使う」前提が成立する。
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
