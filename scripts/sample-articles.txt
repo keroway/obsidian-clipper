@@ -1,0 +1,10 @@
+# 要約モデル比較に使うサンプル記事 URL (1 行 1 URL)。
+# - # 始まりはコメント、空行は無視。
+# - 受け入れ条件は 5 本以上 (Issue #16)。下記はあくまで例なので、
+#   公開して問題ない記事で自分の用途に近いものに差し替え・追加すること。
+# - 日本語記事・英語記事を混ぜると「日本語で要約できているか」と
+#   「他言語混入が出ないか」の両方を確認しやすい。
+
+https://blog.cloudflare.com/workers-ai/
+https://blog.cloudflare.com/the-story-of-cloudflare-r2-storage/
+https://blog.cloudflare.com/durable-objects-easy-fast-correct-choose-three/
