@@ -77,6 +77,31 @@
 - HTTP semantics (RFC 9110): https://datatracker.ietf.org/doc/html/rfc9110
 - Problem Details (RFC 9457): https://datatracker.ietf.org/doc/html/rfc9457
 
+## 要約モデル比較ハーネス (Issue #16)
+
+`@cf/meta/llama-3.1-8b-instruct` の日本語要約に他言語混入が出るため、Workers AI 内で
+別モデルを比較するための再現可能スクリプトを `scripts/compare-summary-models.ts` に置いた。
+本番 Worker と**同一のシステムプロンプト / 抜粋上限 / max_tokens** で各モデルに同じ記事を
+要約させ、要約文・レイテンシ・他言語混入の有無を Markdown で出力する。
+
+- wrangler ではなく CF REST API (`/accounts/{id}/ai/run/{model}`) を直叩きするので、
+  `wrangler.jsonc` の R2 バインディング等を設定しなくても単体で動く。
+- 比較対象記事は `scripts/sample-articles.txt` (1 行 1 URL) で管理。**5 本以上**にすること。
+- 出力をそのまま Issue #5 にコメントするのが受け入れ条件。
+
+```bash
+export CF_ACCOUNT_ID=<account id>
+export CF_API_TOKEN=<Workers AI 実行権限のある API トークン>
+export JINA_API_KEY=<任意>
+bun run compare:summary                       # sample-articles.txt の URL を使用
+bun run compare:summary --models @cf/a,@cf/b  # 候補モデルを上書き
+```
+
+> **注意**: `scripts/compare-summary-models.ts` 内の `SUMMARY_SYSTEM_PROMPT` /
+> `SUMMARY_EXCERPT_LIMIT` / `buildSummaryUserPrompt` / `max_tokens` は `src/index.ts` の
+> コピー。本番側を変えたらスクリプト側も必ず同期すること (比較の忠実性のため)。
+> 採用モデルが決まったら `wrangler.jsonc` の `SUMMARY_MODEL` 反映は Issue #17 で行う。
+
 ## 既知の制約 / 設計の前提
 
 - Remotely Save は **暗号化なし**前提。OFF を切らないと Worker 直書きは効かない。
