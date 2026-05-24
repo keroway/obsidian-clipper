@@ -114,6 +114,29 @@ bun run compare:summary --models @cf/a,@cf/b  # 候補モデルを上書き
 > 全滞 (`No route for that URI`) し未検証。再評価する場合は公式一覧で現行 ID を確認して
 > `--models` で渡すこと。より高品質が要るときは `SUMMARY_PROVIDER=anthropic` (Claude Haiku 4.5, 実装済み #6) も選択肢。
 
+### Claude Agent SDK は不採用 (検討のみ)
+
+「Anthropic API 従量課金の代わりに Claude Agent SDK を使えばサブスク相当クレジットで
+要約を回せるのでは」という案を検討したが、**要約用途では不採用**。`SUMMARY_PROVIDER=anthropic`
+の現行実装 (`POST /v1/messages` 直叩き, #6) を維持する。根拠:
+
+- **ランタイム非互換 (致命的)**: Agent SDK は Claude Code ランタイム (ネイティブバイナリ /
+  `@anthropic-ai/claude-code` CLI) のラッパーで `claude` プロセスを spawn する前提。
+  要約は Worker のエッジランタイム内で同期実行しており、サブプロセス起動も Node の
+  `child_process` も fs も無いため Worker 内では動かせない。設定では回避不能。
+- **ToS**: 公式ドキュメントが "Anthropic generally does not permit third-party developers to
+  offer `claude.ai` login or rate limits for their products, so API key authentication is the
+  recommended method" と明記。個人サブスク枠を自動バックエンドの動力源にするのはグレー。
+- **オーバースペック**: Agent SDK の本領はエージェントループ (ツール実行 / MCP / 複数ターン)。
+  要約は「本文 → 要約 1 個」のステートレス 1 往復で、現行の直叩きが最小かつ正解。
+- **コスト動機が弱い**: Haiku 4.5 で抜粋 6000 字 + 出力 300 tokens の要約は 1 クリップ
+  概ね 1 円未満のオーダー。個人 RIL のクリップ頻度ではサブスク枠節約のメリットより
+  常駐コンポーネント追加・アーキ改変のコストが上回る。デフォルトは Workers AI のまま (#16)。
+
+> どうしてもサブスク枠で回したい場合は、要約を Worker の外 (常駐サーバ / ローカルバッチ) に
+> 出して `claude` / Agent SDK を回す構成になるが、「1 req = 1 file 同期」の MVP 合意を崩し
+> 常駐プロセスの運用負担を生むため、やるなら ADR を書いてから着手すること。
+
 ## 既知の制約 / 設計の前提
 
 - Remotely Save は **暗号化なし**前提。OFF を切らないと Worker 直書きは効かない。
