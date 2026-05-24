@@ -50,11 +50,13 @@ function buildSummaryUserPrompt(md: string, title: string | undefined): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 比較対象の候補モデル。先頭が現行既定。詳細は #5 のコメント参照。
+// ここに載せるのは「実際に /ai/run が通った」モデル ID のみ (Workers AI の
+// ラインナップは入れ替わり、誤った ID は `No route for that URI` で全滞する)。
+// 他モデル (Qwen / Gemma 等) を試すときは、必ず公式一覧で現行 ID を確認してから
+// `--models` で渡すこと: https://developers.cloudflare.com/workers-ai/models/
 const DEFAULT_CANDIDATE_MODELS = [
-  '@cf/meta/llama-3.1-8b-instruct', // 現行既定 (他言語混入の課題元)
-  '@cf/qwen/qwen2.5-7b-instruct', // CJK/日本語に強い想定の最有力候補
-  '@cf/google/gemma-2-9b-it', // 多言語バランス型
-  '@cf/meta/llama-3.3-70b-instruct-fp8-fast', // 大型・高品質期待 / 速度コスト要確認
+  '@cf/meta/llama-3.1-8b-instruct', // 現行既定。低コスト・高速で #16 の採用モデル
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast', // 大型・高品質だが 5〜7 倍遅くコスト高
   '@cf/mistralai/mistral-small-3.1-24b-instruct', // 中型・多言語
 ]
 
