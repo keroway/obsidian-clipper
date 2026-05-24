@@ -100,7 +100,19 @@ bun run compare:summary --models @cf/a,@cf/b  # 候補モデルを上書き
 > **注意**: `scripts/compare-summary-models.ts` 内の `SUMMARY_SYSTEM_PROMPT` /
 > `SUMMARY_EXCERPT_LIMIT` / `buildSummaryUserPrompt` / `max_tokens` は `src/index.ts` の
 > コピー。本番側を変えたらスクリプト側も必ず同期すること (比較の忠実性のため)。
-> 採用モデルが決まったら `wrangler.jsonc` の `SUMMARY_MODEL` 反映は Issue #17 で行う。
+
+### 比較結果と決定 (#16 / #17)
+
+公開記事 5 本 (Cloudflare blog 3 + zenn 2) で比較した結果、**採用モデルは現行の
+`@cf/meta/llama-3.1-8b-instruct` を継続**する (既定値の変更なし)。根拠:
+
+- **コスト/速度**: 平均 1265ms と最速・最安。70B (llama-3.3) は約 7000ms、mistral-small-24b は約 5000ms と 4〜7 倍遅い。
+- **品質差は限定的**: 8B でも他言語混入 0/5、3〜5 文の散文を満たす。期待したほどの差は出なかった。
+- **ハルシネーション耐性**: 取得が 404 になった記事で、8B は正直に「404」と要約した一方、大型モデルは存在しない内容を捏造した。
+
+> 注: 当初候補の `@cf/qwen/qwen2.5-7b-instruct` / `@cf/google/gemma-2-9b-it` は ID 誤りで
+> 全滞 (`No route for that URI`) し未検証。再評価する場合は公式一覧で現行 ID を確認して
+> `--models` で渡すこと。より高品質が要るときは `SUMMARY_PROVIDER=anthropic` (Claude Haiku 4.5, 実装済み #6) も選択肢。
 
 ## 既知の制約 / 設計の前提
 
