@@ -1,0 +1,2 @@
+# テンプレートに収まらない軽い issue も書けるよう、空 issue は許可しておく。
+blank_issues_enabled: true
