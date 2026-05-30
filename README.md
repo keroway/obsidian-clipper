@@ -14,9 +14,21 @@
 
 > **iPhone / Mac / ブラウザから 1 タップで送った URL を、本文 + AI 要約付き Markdown として Obsidian Vault (R2) に保存する Cloudflare Worker。**
 
-[Pocket](https://getpocket.com/) や [Omnivore](https://omnivore.app/) のような
+[Readwise Reader](https://readwise.io/read) や [Instapaper](https://www.instapaper.com/) のような
 "Read It Later" を、自分の Obsidian Vault に閉じた形で実現するための最小実装です。
 インフラは Cloudflare の無料枠に収まり、ロックインも回避できます。
+
+> [!important]
+> **これはアプリでもホスティング済みサービスでもありません。** インストールすればすぐ使える類のものではなく、**自分の Cloudflare アカウント上に自分でデプロイして使う「手引き + 実装例 (リファレンス実装)」** です。
+>
+> 利用するには最低限、次のことが必要です:
+>
+> - Cloudflare アカウントと R2 / Workers の有効化
+> - ターミナルでの CLI 操作 (`git` / `bun` または `npm` / `wrangler`)
+> - Obsidian + [Remotely Save](https://github.com/remotely-save/remotely-save) で R2 バケットを同期している環境
+> - クライアント (iOS ショートカット / Android HTTP Shortcuts / ブックマークレット) を自分で設定する手間
+>
+> 「ストアから入れてログインすれば動くスマホアプリ」を探している場合は、これは合いません。**そのまま [Readwise Reader](https://readwise.io/read) や [Instapaper](https://www.instapaper.com/)、[Raindrop.io](https://raindrop.io/) などの既製サービスを使うほうが早い**です。逆に「自前のインフラに閉じた形で組みたい」「実装を読んで作り変えたい」人向けの土台として書いています。
 
 ---
 
