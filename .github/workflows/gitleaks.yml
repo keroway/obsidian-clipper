@@ -38,7 +38,7 @@ jobs:
           persist-credentials: false
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # organization 配下に移動した場合のみ必要。user-owned では空でよい。
