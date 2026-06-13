@@ -236,6 +236,7 @@ function jstIso(d: Date): string {
 const INVALID_FILENAME_RE = /[\\\/:*?"<>|\[\]#^`]/g
 export function sanitizeForFilename(name: string): string {
   return name
+    .slice(0, 200)
     .replace(INVALID_FILENAME_RE, ' ')
     .replace(/\s+/g, ' ')
     .trim()
