@@ -15,10 +15,6 @@
     }
   ],
 
-  "ai": {
-    "binding": "AI"
-  },
-
   "vars": {
     "VAULT_PREFIX": "",
     "INBOX_FOLDER": "Inbox",
