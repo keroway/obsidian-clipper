@@ -188,7 +188,7 @@ const TRACKING_PARAMS = new Set([
   't',           // X (Twitter) の共有用
 ])
 
-function normalizeUrl(input: string): string {
+export function normalizeUrl(input: string): string {
   let u: URL
   try {
     u = new URL(input.trim())
@@ -234,7 +234,7 @@ function jstIso(d: Date): string {
 
 // Windows / macOS / Obsidian で扱いにくい文字
 const INVALID_FILENAME_RE = /[\\\/:*?"<>|\[\]#^`]/g
-function sanitizeForFilename(name: string): string {
+export function sanitizeForFilename(name: string): string {
   return name
     .replace(INVALID_FILENAME_RE, ' ')
     .replace(/\s+/g, ' ')
@@ -345,7 +345,7 @@ async function summarizeWithAnthropic(
   }
 }
 
-function renderNote(opts: {
+export function renderNote(opts: {
   url: string
   title?: string
   summary: string
