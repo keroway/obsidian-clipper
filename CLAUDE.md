@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `bunx wrangler secret put JINA_API_KEY` — Jina Reader の API キー (任意。未設定でも動くが rate limit が緩くなる)
   (HANDOFF にある要約モデル切替 TODO を実装するなら `ANTHROPIC_API_KEY` も同様に投入)
 
-テストはまだ未導入。導入する場合は HANDOFF.md の指針 (vitest + `@cloudflare/vitest-pool-workers`、Jina / Workers AI は MSW 相当でモック) に従う。
+テストは vitest + `@cloudflare/vitest-pool-workers` で導入済み（`src/index.test.ts`）。追加テストを書く場合は同ファイルを参照。
 
 ## Architecture
 
@@ -64,7 +64,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 作業の進め方
 
-- 機能追加は HANDOFF.md の方針通り、まず `docs/adr/` に ADR を書いてから着手 (ディレクトリは現状未作成)。
+- 機能追加は HANDOFF.md の方針通り、まず `docs/adr/` に ADR を書いてから着手（`docs/adr/0000-template.md` をコピーして使う）。
 - 動作確認の最短ループ:
   ```
   bun run dev
