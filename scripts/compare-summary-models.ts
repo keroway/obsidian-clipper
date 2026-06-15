@@ -85,7 +85,10 @@ function parseArgs(argv: string[]): { models: string[]; urls: string[] } {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--models') {
-      models = (argv[++i] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+      models = (argv[++i] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     } else if (a.startsWith('http')) {
       urls.push(a)
     }
@@ -148,11 +151,14 @@ async function runModel(
       errors?: Array<{ message?: string }>
     }
     if (!res.ok || !data.success) {
-      const msg = data.errors?.map((e) => e.message).join('; ') || `http ${res.status}`
+      const msg =
+        data.errors?.map((e) => e.message).join('; ') || `http ${res.status}`
       return { model, summary: '', latencyMs, foreign: [], error: msg }
     }
     const summary = (data.result?.response ?? '').toString().trim()
-    const foreign = FOREIGN_SCRIPTS.filter((s) => s.re.test(summary)).map((s) => s.name)
+    const foreign = FOREIGN_SCRIPTS.filter((s) => s.re.test(summary)).map(
+      (s) => s.name,
+    )
     return { model, summary, latencyMs, foreign }
   } catch (e) {
     return {
@@ -177,7 +183,9 @@ async function main() {
   const token = process.env.CF_API_TOKEN
   const jinaKey = process.env.JINA_API_KEY
   if (!accountId || !token) {
-    console.error('CF_ACCOUNT_ID と CF_API_TOKEN を環境変数で設定してください。')
+    console.error(
+      'CF_ACCOUNT_ID と CF_API_TOKEN を環境変数で設定してください。',
+    )
     process.exit(1)
   }
 
@@ -200,12 +208,18 @@ async function main() {
   out.push('')
   out.push(`- 生成: ${new Date().toISOString()}`)
   out.push(`- 候補モデル: ${models.map((m) => `\`${m}\``).join(', ')}`)
-  out.push(`- システムプロンプト / 抜粋上限 / max_tokens は src/index.ts と同一`)
+  out.push(
+    `- システムプロンプト / 抜粋上限 / max_tokens は src/index.ts と同一`,
+  )
   out.push('')
 
   // 集計用: モデルごとの混入記事数と平均レイテンシ
-  const agg = new Map<string, { foreignArticles: number; totalMs: number; errors: number }>()
-  for (const m of models) agg.set(m, { foreignArticles: 0, totalMs: 0, errors: 0 })
+  const agg = new Map<
+    string,
+    { foreignArticles: number; totalMs: number; errors: number }
+  >()
+  for (const m of models)
+    agg.set(m, { foreignArticles: 0, totalMs: 0, errors: 0 })
 
   for (const url of urls) {
     console.error(`fetching: ${url}`)
@@ -229,6 +243,7 @@ async function main() {
     for (const model of models) {
       console.error(`  running: ${model}`)
       const r = await runModel(accountId, token, model, md, title)
+      // biome-ignore lint/style/noNonNullAssertion: key guaranteed by agg initialization above
       const a = agg.get(model)!
       a.totalMs += r.latencyMs
       if (r.error) a.errors++
@@ -251,9 +266,12 @@ async function main() {
   out.push('| モデル | 平均レイテンシ | 他言語混入記事 | エラー |')
   out.push('| --- | --- | --- | --- |')
   for (const m of models) {
+    // biome-ignore lint/style/noNonNullAssertion: key guaranteed by agg initialization above
     const a = agg.get(m)!
     const avg = urls.length ? Math.round(a.totalMs / urls.length) : 0
-    out.push(`| \`${m}\` | ${avg}ms | ${a.foreignArticles}/${urls.length} | ${a.errors} |`)
+    out.push(
+      `| \`${m}\` | ${avg}ms | ${a.foreignArticles}/${urls.length} | ${a.errors} |`,
+    )
   }
   out.push('')
   out.push(

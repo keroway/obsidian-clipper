@@ -10,8 +10,8 @@
  * を行う Cloudflare Worker。
  */
 
-import { Hono } from 'hono'
 import type { Context } from 'hono'
+import { Hono } from 'hono'
 import { bearerAuth } from 'hono/bearer-auth'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
@@ -113,11 +113,7 @@ app.post('/clip', async (c) => {
 
   // ---- 2. 要約 (Workers AI, 任意) ----
   let summary = ''
-  if (
-    c.env.ENABLE_SUMMARY === 'true' &&
-    articleMd &&
-    articleMd.length > 200
-  ) {
+  if (c.env.ENABLE_SUMMARY === 'true' && articleMd && articleMd.length > 200) {
     try {
       summary = await summarizeWithProvider(c.env, articleMd, articleTitle)
     } catch (e) {
@@ -154,7 +150,12 @@ app.post('/clip', async (c) => {
     customMetadata: { source: 'obsidian-clipper', url },
   })
 
-  return c.json({ ok: true, path: key, bytes: body.length, summarized: !!summary })
+  return c.json({
+    ok: true,
+    path: key,
+    bytes: body.length,
+    summarized: !!summary,
+  })
 })
 
 app.onError((err, c) => {
@@ -184,8 +185,8 @@ const TRACKING_PARAMS = new Set([
   'si',
   '_hsenc',
   '_hsmi',
-  's',           // X (Twitter) の共有用
-  't',           // X (Twitter) の共有用
+  's', // X (Twitter) の共有用
+  't', // X (Twitter) の共有用
 ])
 
 export function normalizeUrl(input: string): string {
@@ -233,7 +234,7 @@ function jstIso(d: Date): string {
 }
 
 // Windows / macOS / Obsidian で扱いにくい文字
-const INVALID_FILENAME_RE = /[\\\/:*?"<>|\[\]#^`]/g
+const INVALID_FILENAME_RE = /[\\/:*?"<>|[\]#^`]/g
 export function sanitizeForFilename(name: string): string {
   return name
     .slice(0, 200)
@@ -244,7 +245,7 @@ export function sanitizeForFilename(name: string): string {
 }
 
 function yamlEscape(s: string): string {
-  return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
 // モデルのコンテキストに収めるため先頭を切り出す上限
@@ -296,13 +297,16 @@ async function summarize(
   md: string,
   title: string | undefined,
 ): Promise<string> {
-  const r = (await ai.run(model as Parameters<Ai['run']>[0], {
-    messages: [
-      { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-      { role: 'user', content: buildSummaryUserPrompt(md, title) },
-    ],
-    max_tokens: 300,
-  } as never)) as { response?: string }
+  const r = (await ai.run(
+    model as Parameters<Ai['run']>[0],
+    {
+      messages: [
+        { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+        { role: 'user', content: buildSummaryUserPrompt(md, title) },
+      ],
+      max_tokens: 300,
+    } as never,
+  )) as { response?: string }
   return (r?.response ?? '').toString().trim()
 }
 
@@ -334,7 +338,9 @@ async function summarizeWithAnthropic(
     })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      throw new Error(`anthropic ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+      throw new Error(
+        `anthropic ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
+      )
     }
     const data = (await res.json()) as {
       content?: Array<{ type: string; text?: string }>
@@ -379,7 +385,7 @@ export function renderNote(opts: {
 
   if (opts.note) {
     parts.push('> [!note] メモ')
-    parts.push('> ' + opts.note.replace(/\n/g, '\n> '))
+    parts.push(`> ${opts.note.replace(/\n/g, '\n> ')}`)
     parts.push('')
   }
   if (opts.summary) {
@@ -389,7 +395,7 @@ export function renderNote(opts: {
   }
   if (opts.selection) {
     parts.push('## 抜粋')
-    parts.push('> ' + opts.selection.replace(/\n/g, '\n> '))
+    parts.push(`> ${opts.selection.replace(/\n/g, '\n> ')}`)
     parts.push('')
   }
   if (opts.body) {
@@ -398,7 +404,9 @@ export function renderNote(opts: {
     parts.push('')
   } else if (opts.fetchErr) {
     parts.push('## 本文')
-    parts.push(`> 本文取得に失敗しました (${opts.fetchErr}). 後で手動で開いてください。`)
+    parts.push(
+      `> 本文取得に失敗しました (${opts.fetchErr}). 後で手動で開いてください。`,
+    )
     parts.push('')
   }
 

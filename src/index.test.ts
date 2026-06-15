@@ -7,9 +7,9 @@
  * Integration test: POST /clip (runs inside Workerd via vitest-pool-workers)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { normalizeUrl, sanitizeForFilename, renderNote } from './index'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { normalizeUrl, renderNote, sanitizeForFilename } from './index'
 
 // ─────────────────────────── normalizeUrl ───────────────────────────
 
@@ -337,6 +337,7 @@ describe('POST /clip integration', () => {
     // Verify R2 PUT actually happened by retrieving the object
     const stored = await env.VAULT.get(json.path)
     expect(stored).not.toBeNull()
+    // biome-ignore lint/style/noNonNullAssertion: expect() assertion above guarantees non-null
     const content = await stored!.text()
     expect(content).toContain('source: web-clip')
     expect(content).toContain('source_url:')
