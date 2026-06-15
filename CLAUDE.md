@@ -13,6 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `bun install` — 依存導入
 - `bun run dev` — `wrangler dev`。動作確認の最短ループは `wrangler dev` + curl POST。
 - `bun run typecheck` — `tsc --noEmit`。TypeScript strict を維持すること。
+- `bun run lint` — Biome による lint/format チェック（CI と同条件）。`bun run check` で lint+format+import sort の全チェック、`bun run format` で自動修正。
 - `bun run deploy` — `wrangler deploy`
 - `bun run tail` — `wrangler tail` で本番ログ
 - `bunx wrangler secret put SHARED_SECRET` — Bearer 認証用シークレット投入
