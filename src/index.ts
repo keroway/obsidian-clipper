@@ -28,6 +28,7 @@ type Bindings = {
   SUMMARY_PROVIDER?: string
   ANTHROPIC_API_KEY?: string
   ANTHROPIC_MODEL?: string
+  NOTIFY_WEBHOOK_URL?: string
 }
 
 type ClipBody = {
@@ -123,6 +124,14 @@ app.post('/clip', async (c) => {
   } catch (e) {
     fetchErr = `jina ${(e as Error).message}`
   }
+  if (fetchErr && c.env.NOTIFY_WEBHOOK_URL) {
+    c.executionCtx.waitUntil(
+      notifyWebhook(
+        c.env.NOTIFY_WEBHOOK_URL,
+        `[obsidian-clipper] 本文取得失敗: ${url} (${fetchErr})`,
+      ),
+    )
+  }
 
   // ---- 2. 要約 (Workers AI, 任意) ----
   let summary = ''
@@ -131,6 +140,14 @@ app.post('/clip', async (c) => {
       summary = await summarizeWithProvider(c.env, articleMd, articleTitle)
     } catch (e) {
       console.warn('summarize failed', (e as Error).message)
+      if (c.env.NOTIFY_WEBHOOK_URL) {
+        c.executionCtx.waitUntil(
+          notifyWebhook(
+            c.env.NOTIFY_WEBHOOK_URL,
+            `[obsidian-clipper] 要約失敗: ${url} (${(e as Error).message})`,
+          ),
+        )
+      }
     }
   }
 
@@ -461,4 +478,16 @@ export function renderNote(opts: {
 
 function unique<T>(xs: T[]): T[] {
   return [...new Set(xs)]
+}
+
+async function notifyWebhook(url: string, message: string): Promise<void> {
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: message, content: message }),
+    })
+  } catch (e) {
+    console.warn('webhook notify failed', (e as Error).message)
+  }
 }
