@@ -85,6 +85,19 @@ app.post('/clip', async (c) => {
 
   const url = normalizeUrl(payload.url)
 
+  const refresh = c.req.query('refresh') === '1'
+
+  // ---- 0. 重複検知 ----
+  const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
+  const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
+  const indexKey = `${prefix}${folder}/.index/urls.json`
+  const hash = await sha1Hex(url)
+
+  const urlIndex = await readUrlIndex(c.env.VAULT, indexKey)
+  if (!refresh && urlIndex[hash]) {
+    return c.json({ ok: false, duplicate: true, path: urlIndex[hash].path })
+  }
+
   // ---- 1. 本文取得 (Jina Reader) ----
   let articleMd = ''
   let articleTitle: string | undefined = payload.title?.trim() || undefined
@@ -128,8 +141,6 @@ app.post('/clip', async (c) => {
     sanitizeForFilename(articleTitle || hostname(url) || 'clip').slice(0, 60) ||
     'clip'
   const filename = `${stamp}_${slug}.md`
-  const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
-  const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
   const key = `${prefix}${folder}/${filename}`
 
   // ---- 4. ノート本文を組み立てて R2 に書き込み ----
@@ -149,6 +160,10 @@ app.post('/clip', async (c) => {
     httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
     customMetadata: { source: 'obsidian-clipper', url },
   })
+
+  // ---- 5. インデックス更新 ----
+  urlIndex[hash] = { path: key, createdAt: jstIso(now) }
+  await writeUrlIndex(c.env.VAULT, indexKey, urlIndex)
 
   return c.json({
     ok: true,
@@ -350,6 +365,37 @@ async function summarizeWithAnthropic(
   } finally {
     clearTimeout(timer)
   }
+}
+
+type IndexEntry = { path: string; createdAt: string }
+type UrlIndex = Record<string, IndexEntry>
+
+export async function sha1Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text)
+  const buf = await crypto.subtle.digest('SHA-1', data)
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function readUrlIndex(vault: R2Bucket, key: string): Promise<UrlIndex> {
+  const obj = await vault.get(key)
+  if (!obj) return {}
+  try {
+    return (await obj.json()) as UrlIndex
+  } catch {
+    return {}
+  }
+}
+
+async function writeUrlIndex(
+  vault: R2Bucket,
+  key: string,
+  index: UrlIndex,
+): Promise<void> {
+  await vault.put(key, JSON.stringify(index), {
+    httpMetadata: { contentType: 'application/json; charset=utf-8' },
+  })
 }
 
 export function renderNote(opts: {
