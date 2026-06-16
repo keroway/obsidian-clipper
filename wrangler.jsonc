@@ -45,6 +45,12 @@
     "ANTHROPIC_MODEL": "claude-haiku-4-5-20251001"
   },
 
+  // シークレット一覧 (bunx wrangler secret put <KEY> で投入)
+  //   SHARED_SECRET        — Bearer 認証トークン
+  //   JINA_API_KEY         — Jina Reader の API キー (任意)
+  //   ANTHROPIC_API_KEY    — Anthropic API キー (SUMMARY_PROVIDER=anthropic 時)
+  //   NOTIFY_WEBHOOK_URL   — 失敗通知先 Webhook URL (任意)。Discord/Slack 互換。
+
   "observability": {
     "enabled": true
   }
