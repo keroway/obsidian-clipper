@@ -9,7 +9,7 @@
 
 import { env, SELF } from 'cloudflare:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeUrl, renderNote, sanitizeForFilename } from './index'
+import { normalizeUrl, renderNote, sanitizeForFilename, sha1Hex } from './index'
 
 // ─────────────────────────── normalizeUrl ───────────────────────────
 
@@ -244,6 +244,28 @@ describe('renderNote', () => {
   })
 })
 
+// ─────────────────────────── sha1Hex ───────────────────────────
+
+describe('sha1Hex', () => {
+  it('returns 40-char lowercase hex string', async () => {
+    const h = await sha1Hex('https://example.com/')
+    expect(h).toHaveLength(40)
+    expect(h).toMatch(/^[0-9a-f]+$/)
+  })
+
+  it('is deterministic for the same input', async () => {
+    const h1 = await sha1Hex('https://example.com/article')
+    const h2 = await sha1Hex('https://example.com/article')
+    expect(h1).toBe(h2)
+  })
+
+  it('differs for different inputs', async () => {
+    const h1 = await sha1Hex('https://example.com/a')
+    const h2 = await sha1Hex('https://example.com/b')
+    expect(h1).not.toBe(h2)
+  })
+})
+
 // ─────────────────────────── Integration: POST /clip ───────────────────────────
 
 describe('POST /clip integration', () => {
@@ -343,5 +365,96 @@ describe('POST /clip integration', () => {
     expect(content).toContain('source_url:')
     // UTM param should be stripped
     expect(content).not.toContain('utm_source')
+  })
+})
+
+// ─────────────────────────── Integration: duplicate detection ───────────────────────────
+
+describe('POST /clip - duplicate detection', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const mockJina = () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url = input.toString()
+        if (url.startsWith('https://r.jina.ai/')) {
+          return new Response('Title: Test Article\n\nBody content.', {
+            status: 200,
+          })
+        }
+        return new Response('Not Found', { status: 404 })
+      },
+    )
+  }
+
+  const clipUrl = async (url: string, query = '') => {
+    return SELF.fetch(`http://example.com/clip${query}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify({ url }),
+    })
+  }
+
+  it('returns duplicate:true on second clip of the same URL', async () => {
+    mockJina()
+    const url = 'https://example.com/dedup-test-unique-1'
+
+    const res1 = await clipUrl(url)
+    expect(res1.status).toBe(200)
+    const json1 = (await res1.json()) as { ok: boolean; path: string }
+    expect(json1.ok).toBe(true)
+
+    const res2 = await clipUrl(url)
+    expect(res2.status).toBe(200)
+    const json2 = (await res2.json()) as {
+      ok: boolean
+      duplicate: boolean
+      path: string
+    }
+    expect(json2.ok).toBe(false)
+    expect(json2.duplicate).toBe(true)
+    expect(json2.path).toBe(json1.path)
+  })
+
+  it('saves successfully with ?refresh=1 even if duplicate', async () => {
+    mockJina()
+    const url = 'https://example.com/dedup-refresh-unique-1'
+
+    const res1 = await clipUrl(url)
+    expect(((await res1.json()) as { ok: boolean }).ok).toBe(true)
+
+    const res2 = await clipUrl(url, '?refresh=1')
+    expect(res2.status).toBe(200)
+    const json2 = (await res2.json()) as { ok: boolean }
+    expect(json2.ok).toBe(true)
+  })
+
+  it('updates index path after refresh, so next clip reports duplicate with new path', async () => {
+    mockJina()
+    const url = 'https://example.com/dedup-refresh-index-unique-1'
+
+    // Initial clip
+    await clipUrl(url)
+
+    // Refresh — saves a new file and updates the index
+    const res2 = await clipUrl(url, '?refresh=1')
+    const json2 = (await res2.json()) as { ok: boolean; path: string }
+    expect(json2.ok).toBe(true)
+
+    // Next duplicate should point to the refreshed path
+    const res3 = await clipUrl(url)
+    const json3 = (await res3.json()) as {
+      ok: boolean
+      duplicate: boolean
+      path: string
+    }
+    expect(json3.ok).toBe(false)
+    expect(json3.duplicate).toBe(true)
+    expect(json3.path).toBe(json2.path)
   })
 })
