@@ -453,13 +453,29 @@ const HOST_TAG_RULES: ReadonlyArray<[string, string]> = [
 // Obsidian / Dataview のタグで扱いにくい文字を除去し、空白はハイフン化して正規化する。
 // 戻り値が空文字なら呼び出し側で捨てる。
 export function normalizeTag(input: string): string {
-  return input
+  const collapsed = input
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff_-]/g, '')
     .replace(/-{2,}/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '')
+  // 先頭/末尾の - と _ を除去。正規表現の末尾アンカー繰り返し (ReDoS) を避けるため
+  // 文字単位でトリムする。
+  let start = 0
+  let end = collapsed.length
+  while (
+    start < end &&
+    (collapsed[start] === '-' || collapsed[start] === '_')
+  ) {
+    start++
+  }
+  while (
+    end > start &&
+    (collapsed[end - 1] === '-' || collapsed[end - 1] === '_')
+  ) {
+    end--
+  }
+  return collapsed.slice(start, end)
 }
 
 // 複数ソースのタグを正規化 → 重複排除 → 上限で打ち切る。
