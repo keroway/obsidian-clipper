@@ -36,6 +36,9 @@
     "INBOX_FOLDER": "Inbox",
     // 要約を有効化するか
     "ENABLE_SUMMARY": "true",
+    // 本文 + ホスト名から自動タグを付与するか。"true" で LLM タグ生成を有効化
+    // (ホスト名 allowlist タグは本設定に関わらず常に付与される)
+    "ENABLE_AUTO_TAG": "false",
     // 要約に使う Workers AI モデル。日本語品質に不満が出たら別モデルへ
     "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
     // 要約プロバイダ。"workers-ai" (既定) または "anthropic"。
@@ -46,10 +49,14 @@
   },
 
   // シークレット一覧 (bunx wrangler secret put <KEY> で投入)
-  //   SHARED_SECRET        — Bearer 認証トークン
-  //   JINA_API_KEY         — Jina Reader の API キー (任意)
-  //   ANTHROPIC_API_KEY    — Anthropic API キー (SUMMARY_PROVIDER=anthropic 時)
-  //   NOTIFY_WEBHOOK_URL   — 失敗通知先 Webhook URL (任意)。Discord/Slack 互換。
+  //   SHARED_SECRET                — Bearer 認証トークン
+  //   JINA_API_KEY                 — Jina Reader の API キー (任意)
+  //   ANTHROPIC_API_KEY            — Anthropic API キー (SUMMARY_PROVIDER=anthropic 時)
+  //   NOTIFY_WEBHOOK_URL           — 失敗通知先 Webhook URL (任意)。Discord/Slack 互換。
+  //   CF_ACCOUNT_ID                — Cloudflare アカウント ID。Jina 失敗時の
+  //                                  Browser Rendering フォールバックに使う (任意)。
+  //   BROWSER_RENDERING_API_TOKEN  — Browser Rendering 実行権限のある API トークン (任意)。
+  //                                  CF_ACCOUNT_ID と両方揃ったときだけフォールバックが有効。
 
   "observability": {
     "enabled": true
