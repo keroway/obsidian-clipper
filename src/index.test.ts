@@ -9,7 +9,17 @@
 
 import { env, SELF } from 'cloudflare:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeUrl, renderNote, sanitizeForFilename, sha1Hex } from './index'
+import type { Bindings } from './index'
+import {
+  fetchArticle,
+  hostTagsFor,
+  mergeTags,
+  normalizeTag,
+  normalizeUrl,
+  renderNote,
+  sanitizeForFilename,
+  sha1Hex,
+} from './index'
 
 // ─────────────────────────── normalizeUrl ───────────────────────────
 
@@ -266,6 +276,183 @@ describe('sha1Hex', () => {
   })
 })
 
+// ─────────────────────────── tags ───────────────────────────
+
+describe('normalizeTag', () => {
+  it('lowercases', () => {
+    expect(normalizeTag('Cloudflare')).toBe('cloudflare')
+  })
+
+  it('converts spaces to hyphens', () => {
+    expect(normalizeTag('machine learning')).toBe('machine-learning')
+  })
+
+  it('collapses repeated hyphens', () => {
+    expect(normalizeTag('a  -  b')).toBe('a-b')
+  })
+
+  it('strips disallowed symbols', () => {
+    expect(normalizeTag('c++/rust!')).toBe('crust')
+  })
+
+  it('trims leading/trailing hyphens and underscores', () => {
+    expect(normalizeTag('--foo_')).toBe('foo')
+  })
+
+  it('keeps Japanese characters', () => {
+    expect(normalizeTag('技術')).toBe('技術')
+  })
+
+  it('returns empty string for symbol-only input', () => {
+    expect(normalizeTag('***')).toBe('')
+  })
+})
+
+describe('mergeTags', () => {
+  it('normalizes, dedupes and preserves order', () => {
+    expect(mergeTags(['clipped', 'Tech', 'tech', 'AI'])).toEqual([
+      'clipped',
+      'tech',
+      'ai',
+    ])
+  })
+
+  it('drops empty-after-normalize entries', () => {
+    expect(mergeTags(['clipped', '***', 'ok'])).toEqual(['clipped', 'ok'])
+  })
+
+  it('caps total tags at the limit (8)', () => {
+    const many = Array.from({ length: 20 }, (_, i) => `tag${i}`)
+    expect(mergeTags(many)).toHaveLength(8)
+  })
+})
+
+describe('hostTagsFor', () => {
+  it('matches exact host', () => {
+    expect(hostTagsFor('https://zenn.dev/foo/articles/bar')).toEqual(['zenn'])
+  })
+
+  it('matches subdomain via suffix', () => {
+    expect(hostTagsFor('https://blog.hatenablog.com/entry/1')).toEqual([
+      'hatena',
+    ])
+  })
+
+  it('normalizes twitter→x is out of scope here; matches x.com', () => {
+    expect(hostTagsFor('https://x.com/user/status/1')).toEqual(['x'])
+  })
+
+  it('returns empty for unknown hosts', () => {
+    expect(hostTagsFor('https://example.com/a')).toEqual([])
+  })
+})
+
+// ─────────────────────────── fetchArticle (retry + fallback) ───────────────────────────
+
+describe('fetchArticle', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // Browser Rendering を無効にした最小 env (Jina のみ)
+  const jinaOnlyEnv = {} as Bindings
+  // Browser Rendering を有効にした env
+  const brEnv = {
+    CF_ACCOUNT_ID: 'acc-123',
+    BROWSER_RENDERING_API_TOKEN: 'br-token',
+  } as Bindings
+
+  it('returns md and via=jina on first-try 200', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: Hello\n\nBody.', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/a', jinaOnlyEnv)
+    expect(r.md).toContain('Body.')
+    expect(r.title).toBe('Hello')
+    expect(r.via).toBe('jina')
+    expect(r.err).toBeUndefined()
+  })
+
+  it('retries on 429 then succeeds (via=jina-retry)', async () => {
+    let calls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        calls++
+        if (calls === 1) return new Response('rate', { status: 429 })
+        return new Response('Title: Retried\n\nOK.', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/b', jinaOnlyEnv)
+    expect(calls).toBe(2)
+    expect(r.md).toContain('OK.')
+    expect(r.via).toBe('jina-retry')
+  })
+
+  it('falls back to browser-rendering after jina keeps failing', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('rate', { status: 429 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        return new Response(
+          JSON.stringify({ success: true, result: 'Title: BR\n\nFrom BR.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/c', brEnv)
+    expect(r.md).toContain('From BR.')
+    expect(r.via).toBe('browser-rendering')
+    expect(r.err).toBeUndefined()
+  })
+
+  it('returns empty md + err when every path fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('rate', { status: 429 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        return new Response('boom', { status: 500 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/d', brEnv)
+    expect(r.md).toBe('')
+    expect(r.via).toBeUndefined()
+    expect(r.err).toBeTruthy()
+  })
+
+  it('does not retry on non-retryable status (404)', async () => {
+    let calls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        calls++
+        return new Response('gone', { status: 404 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/e', jinaOnlyEnv)
+    expect(calls).toBe(1)
+    expect(r.md).toBe('')
+    expect(r.err).toContain('404')
+  })
+})
+
 // ─────────────────────────── Integration: POST /clip ───────────────────────────
 
 describe('POST /clip integration', () => {
@@ -456,5 +643,105 @@ describe('POST /clip - duplicate detection', () => {
     expect(json3.ok).toBe(false)
     expect(json3.duplicate).toBe(true)
     expect(json3.path).toBe(json2.path)
+  })
+})
+
+// ─────────── Integration: fetch-failure invariant (200 + URL/memo saved) ───────────
+
+describe('POST /clip - fetch failure invariant', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('still returns 200 and saves URL + note when fetch fails entirely', async () => {
+    // Jina always 429; Browser Rendering not configured in test env → no fallback
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('rate', { status: 429 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const url = 'https://example.com/fetch-fail-invariant-unique-1'
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify({ url, note: 'keep me' }),
+    })
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { ok: boolean; path: string }
+    expect(json.ok).toBe(true)
+
+    const stored = await env.VAULT.get(json.path)
+    expect(stored).not.toBeNull()
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    // URL is preserved
+    expect(content).toContain(url)
+    // user note is preserved
+    expect(content).toContain('keep me')
+    // fetch error is recorded in body section
+    expect(content).toContain('jina 429')
+  })
+})
+
+// ─────────── Integration: auto-tagging (allowlist, ENABLE_AUTO_TAG off in test env) ───────────
+
+describe('POST /clip - auto tagging', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const clip = async (url: string, tags?: string[]) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: T\n\nBody content here.', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+    return SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify(tags ? { url, tags } : { url }),
+    })
+  }
+
+  it('adds allowlist host tag and keeps clipped + user tags', async () => {
+    // ENABLE_AUTO_TAG is unset in test env → no LLM call, allowlist still applies
+    const res = await clip('https://zenn.dev/foo/articles/tag-test-1', ['mine'])
+    const json = (await res.json()) as { ok: boolean; path: string }
+    expect(json.ok).toBe(true)
+    const stored = await env.VAULT.get(json.path)
+    // biome-ignore lint/style/noNonNullAssertion: assertion guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('- "clipped"')
+    expect(content).toContain('- "mine"')
+    expect(content).toContain('- "zenn"')
+  })
+
+  it('only clipped tag for unknown host without user tags', async () => {
+    const res = await clip('https://unknown-host-xyz.example/a/tag-test-2')
+    const json = (await res.json()) as { ok: boolean; path: string }
+    const stored = await env.VAULT.get(json.path)
+    // biome-ignore lint/style/noNonNullAssertion: assertion guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('- "clipped"')
+    // frontmatter tags block should only contain clipped (no host/user tags)
+    const fmTags = content.slice(
+      content.indexOf('tags:'),
+      content.indexOf('summary:') > -1
+        ? content.indexOf('summary:')
+        : content.indexOf('---', 4),
+    )
+    expect(fmTags).not.toContain('- "zenn"')
   })
 })

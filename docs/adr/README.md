@@ -13,3 +13,8 @@
 | 番号 | タイトル | Status |
 |------|--------|--------|
 | [0001](0001-introduce-vitest.md) | vitest + @cloudflare/vitest-pool-workers の導入 | Accepted |
+| [0002](0002-adopt-biome.md) | Biome の採用 | Accepted |
+| [0003](0003-url-dedup.md) | URL 重複検知 | Accepted |
+| [0006](0006-failure-notification.md) | 失敗通知 (Webhook) | Accepted |
+| [0007](0007-fetch-robustness.md) | 本文取得の堅牢化 (Jina フォールバック) | Accepted |
+| [0008](0008-auto-tagging.md) | タグ自動付与 | Accepted |
