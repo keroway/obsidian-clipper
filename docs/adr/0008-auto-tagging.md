@@ -2,6 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-06-21
+- Issue: #35 (受け入れ条件は本 0008 で満たす。issue 本文の `0005-auto-tagging.md`
+  は起案時の仮番号で、実装時の ADR 番号進行に合わせ 0008 に確定した)
+- Update (#35): 受け入れ条件に合わせて以下を調整 — (1) env 名を `ENABLE_AUTO_TAGS`
+  (複数) にし、旧 `ENABLE_AUTO_TAG` も後方互換で受付。(2) LLM 生成は **手動タグ 0 件時のみ**
+  にゲート。(3) allowlist を `AUTO_TAGS_ALLOWLIST` env (`host:tag,...`) で設定可能にし、
+  `DEFAULT_HOST_TAG_RULES` に追記マージする方式に変更。
 
 ## Context
 
@@ -56,5 +62,7 @@ degrade する。**
 - allowlist は本文取得や LLM の成否に関わらず常に付与される (ホスト名だけで決まる)。
 - `tags` キー名・`clipped` 既定タグ・frontmatter 構造は不変。Keep 移行 / Dataview
    互換を維持。
-- allowlist はコード直書き (`HOST_TAG_RULES` 定数)。増えたら別ファイル化を検討。
+- allowlist の既定ルールはコード直書き (`DEFAULT_HOST_TAG_RULES` 定数)。動的追加は
+   `AUTO_TAGS_ALLOWLIST` env (`host:tag,...`) で行い、`resolveHostTagRules()` で既定ルールに
+   マージする。既定ルールが大きく肥大化したら別ファイル化を検討。
 </content>

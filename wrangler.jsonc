@@ -36,9 +36,13 @@
     "INBOX_FOLDER": "Inbox",
     // 要約を有効化するか
     "ENABLE_SUMMARY": "true",
-    // 本文 + ホスト名から自動タグを付与するか。"true" で LLM タグ生成を有効化
+    // 手動タグが 0 件のとき本文から LLM タグを生成するか。"true" で有効化。
     // (ホスト名 allowlist タグは本設定に関わらず常に付与される)
-    "ENABLE_AUTO_TAG": "false",
+    // 旧名 ENABLE_AUTO_TAG (単数) も後方互換で受け付けるが、ENABLE_AUTO_TAGS を推奨。
+    "ENABLE_AUTO_TAGS": "false",
+    // ホスト名ベースの固定タグ allowlist。"zenn.dev:zenn,github.com:github" 形式。
+    // 既定ルール (zenn/qiita/note/hatena/x/github/youtube/slides) に追記マージされる。
+    "AUTO_TAGS_ALLOWLIST": "",
     // 要約に使う Workers AI モデル。日本語品質に不満が出たら別モデルへ
     "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
     // 要約プロバイダ。"workers-ai" (既定) または "anthropic"。
