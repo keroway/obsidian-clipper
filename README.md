@@ -57,7 +57,7 @@
 - 📥 **1 タップで保存** — iOS ショートカット / Android HTTP Shortcuts / Chrome ブックマークレット / `curl` から `POST /clip` を叩くだけ。
 - 📝 **frontmatter 付き Markdown** — `created` / `source_url` / `tags` / `summary` を含む Dataview フレンドリーな形式。
 - 🧠 **AI 要約** — Workers AI (Llama 3.1 8B) または Anthropic Claude Haiku 4.5 を選択可能。Anthropic 障害時は自動で Workers AI にフォールバック。
-- 🏷️ **タグ自動付与** — ホスト名 allowlist (`zenn.dev`→`zenn` 等) は常時、`ENABLE_AUTO_TAG=true` なら本文から LLM タグも最大 3 個付与。
+- 🏷️ **タグ自動付与** — ホスト名 allowlist (`zenn.dev`→`zenn` 等、`AUTO_TAGS_ALLOWLIST` で追記可) は常時、`ENABLE_AUTO_TAGS=true` なら手動タグ 0 件時に本文から LLM タグも最大 3 個付与。
 - 🪶 **本文抽出は Jina Reader** — SPA / 動的サイトでもそれなりに動く。`JINA_API_KEY` を入れれば rate limit が緩む。429/503 時は自動リトライし、なお失敗すれば Browser Rendering にフォールバック (任意設定)。
 - 🧹 **URL 正規化** — UTM / `gclid` / X の `?s` `?t` などのトラッキングパラメータを自動除去。`twitter.com` / `mobile.twitter.com` は `x.com` に揃える。
 - 🔐 **Bearer 認証** — Cloudflare Secrets で共有シークレットを管理。複数人で使うなら Cloudflare Access に切替可能。
@@ -375,7 +375,8 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 | `VAULT_PREFIX`        | `""`                            | Vault が R2 上で持つ prefix。**末尾スラッシュ必須**または空文字       |
 | `INBOX_FOLDER`        | `"Inbox"`                       | Vault ルートからの保存先サブフォルダ                                 |
 | `ENABLE_SUMMARY`      | `"true"`                        | 要約を有効化するか                                                   |
-| `ENABLE_AUTO_TAG`     | `"false"`                       | 本文+ホスト名から LLM タグを生成 (allowlist タグは常に付与)          |
+| `ENABLE_AUTO_TAGS`    | `"false"`                       | 手動タグが 0 件のとき本文から LLM タグを生成 (旧名 `ENABLE_AUTO_TAG` も後方互換で可) |
+| `AUTO_TAGS_ALLOWLIST` | `""`                            | ホスト名固定タグ。`zenn.dev:zenn,github.com:github` 形式。既定ルールに追記 |
 | `SUMMARY_MODEL`       | `"@cf/meta/llama-3.1-8b-instruct"` | Workers AI で使うモデル                                              |
 | `SUMMARY_PROVIDER`    | `"workers-ai"`                  | `"workers-ai"` または `"anthropic"`                                  |
 | `ANTHROPIC_MODEL`     | `"claude-haiku-4-5-20251001"`   | Anthropic を使う場合のモデル ID                                      |

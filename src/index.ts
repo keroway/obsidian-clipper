@@ -24,7 +24,12 @@ export type Bindings = {
   INBOX_FOLDER: string
   ENABLE_SUMMARY: string
   SUMMARY_MODEL: string
+  ENABLE_AUTO_TAGS?: string
+  // 後方互換: 旧名 (単数)。ENABLE_AUTO_TAGS が優先。
   ENABLE_AUTO_TAG?: string
+  // ホスト名 → 固定タグの allowlist。'zenn.dev:zenn,github.com:github' 形式。
+  // 既定ルールに追記マージされる (未設定でも既定ルールは有効)。
+  AUTO_TAGS_ALLOWLIST?: string
   JINA_API_KEY?: string
   SUMMARY_PROVIDER?: string
   ANTHROPIC_API_KEY?: string
@@ -136,21 +141,23 @@ app.post('/clip', async (c) => {
   }
 
   // ---- 2.5 タグ統合 (clipped + ユーザ + allowlist + LLM) ----
-  const hostTags = hostTagsFor(url)
+  const hostTags = hostTagsFor(url, c.env)
+  const manualTags = payload.tags ?? []
   let llmTags: string[] = []
-  if (c.env.ENABLE_AUTO_TAG === 'true' && articleMd && articleMd.length > 200) {
+  // 受け入れ条件 (#35): 手動タグが 0 件のときのみ LLM 生成する。
+  if (
+    autoTagsEnabled(c.env) &&
+    manualTags.length === 0 &&
+    articleMd &&
+    articleMd.length > 200
+  ) {
     try {
       llmTags = await generateTags(c.env, articleMd, articleTitle)
     } catch (e) {
       console.warn('auto-tag failed', (e as Error).message)
     }
   }
-  const tags = mergeTags([
-    'clipped',
-    ...(payload.tags ?? []),
-    ...hostTags,
-    ...llmTags,
-  ])
+  const tags = mergeTags(['clipped', ...manualTags, ...hostTags, ...llmTags])
 
   // ---- 3. 保存パス決定 ----
   const now = new Date()
@@ -445,8 +452,9 @@ const MAX_AUTO_TAGS = 3
 // LLM 生成タグを除いた最終タグ件数の上限 (clipped + user + host + llm を統合後に打ち切る)
 const MAX_TOTAL_TAGS = 8
 
-// ホスト名サフィックス → 固定タグ。LLM 不要で確実に付与する allowlist。
-const HOST_TAG_RULES: ReadonlyArray<[string, string]> = [
+// ホスト名サフィックス → 固定タグの既定 allowlist。LLM 不要で確実に付与する。
+// AUTO_TAGS_ALLOWLIST env で追記可能 (resolveHostTagRules 参照)。
+const DEFAULT_HOST_TAG_RULES: ReadonlyArray<[string, string]> = [
   ['zenn.dev', 'zenn'],
   ['qiita.com', 'qiita'],
   ['note.com', 'note'],
@@ -501,12 +509,36 @@ export function mergeTags(raw: string[]): string[] {
   return out
 }
 
+// AUTO_TAGS_ALLOWLIST ('zenn.dev:zenn,github.com:github' 形式) をパースし、
+// 既定ルールにマージした [suffix, tag] 一覧を返す。
+// 同一 suffix+tag の重複は除去。不正なエントリ (コロン欠落等) は無視。
+export function resolveHostTagRules(
+  allowlist: string | undefined,
+): ReadonlyArray<[string, string]> {
+  if (!allowlist) return DEFAULT_HOST_TAG_RULES
+  const rules: Array<[string, string]> = [...DEFAULT_HOST_TAG_RULES]
+  const seen = new Set(rules.map(([s, t]) => `${s}\t${t}`))
+  for (const entry of allowlist.split(',')) {
+    const idx = entry.indexOf(':')
+    if (idx <= 0) continue
+    const host = entry.slice(0, idx).trim().toLowerCase()
+    const tag = normalizeTag(entry.slice(idx + 1))
+    if (!host || !tag) continue
+    const key = `${host}\t${tag}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    rules.push([host, tag])
+  }
+  return rules
+}
+
 // ホスト名 allowlist 照合。サブドメインも後方一致で拾う (例: foo.hatenablog.com)。
-export function hostTagsFor(url: string): string[] {
+export function hostTagsFor(url: string, env?: Bindings): string[] {
   const h = hostname(url)
   if (!h) return []
+  const rules = resolveHostTagRules(env?.AUTO_TAGS_ALLOWLIST)
   const tags: string[] = []
-  for (const [suffix, tag] of HOST_TAG_RULES) {
+  for (const [suffix, tag] of rules) {
     if (h === suffix || h.endsWith(`.${suffix}`)) tags.push(tag)
   }
   return tags
@@ -523,6 +555,11 @@ function parseTagList(s: string): string[] {
     .map((t) => t.trim())
     .filter(Boolean)
     .slice(0, MAX_AUTO_TAGS)
+}
+
+// ENABLE_AUTO_TAGS (新) または ENABLE_AUTO_TAG (旧・後方互換) のいずれかが 'true' なら有効。
+export function autoTagsEnabled(env: Bindings): boolean {
+  return env.ENABLE_AUTO_TAGS === 'true' || env.ENABLE_AUTO_TAG === 'true'
 }
 
 // 本文 + タイトルから LLM でタグを最大 MAX_AUTO_TAGS 個生成する。

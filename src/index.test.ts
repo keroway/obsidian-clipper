@@ -11,12 +11,14 @@ import { env, SELF } from 'cloudflare:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Bindings } from './index'
 import {
+  autoTagsEnabled,
   fetchArticle,
   hostTagsFor,
   mergeTags,
   normalizeTag,
   normalizeUrl,
   renderNote,
+  resolveHostTagRules,
   sanitizeForFilename,
   sha1Hex,
 } from './index'
@@ -344,6 +346,64 @@ describe('hostTagsFor', () => {
 
   it('returns empty for unknown hosts', () => {
     expect(hostTagsFor('https://example.com/a')).toEqual([])
+  })
+
+  it('applies AUTO_TAGS_ALLOWLIST env rules (host:tag,...)', () => {
+    const env = {
+      AUTO_TAGS_ALLOWLIST: 'example.com:demo,foo.test:bar',
+    } as unknown as Bindings
+    expect(hostTagsFor('https://example.com/a', env)).toEqual(['demo'])
+    expect(hostTagsFor('https://sub.foo.test/a', env)).toEqual(['bar'])
+  })
+
+  it('merges env allowlist on top of defaults', () => {
+    const env = {
+      AUTO_TAGS_ALLOWLIST: 'example.com:demo',
+    } as unknown as Bindings
+    // default rule still applies
+    expect(hostTagsFor('https://zenn.dev/x', env)).toEqual(['zenn'])
+    // env rule applies too
+    expect(hostTagsFor('https://example.com/x', env)).toEqual(['demo'])
+  })
+})
+
+describe('resolveHostTagRules', () => {
+  it('returns defaults when allowlist is undefined', () => {
+    const rules = resolveHostTagRules(undefined)
+    expect(rules.some(([h, t]) => h === 'zenn.dev' && t === 'zenn')).toBe(true)
+  })
+
+  it('parses host:tag pairs and normalizes the tag', () => {
+    const rules = resolveHostTagRules('Example.COM: Demo Tag ')
+    expect(rules).toContainEqual(['example.com', 'demo-tag'])
+  })
+
+  it('ignores malformed entries (missing colon / empty parts)', () => {
+    const before = resolveHostTagRules(undefined).length
+    const rules = resolveHostTagRules('nocolon,:notag,host.com:,,good.com:ok')
+    expect(rules).toContainEqual(['good.com', 'ok'])
+    // only the one valid entry is appended
+    expect(rules.length).toBe(before + 1)
+  })
+
+  it('dedupes entries already present in defaults', () => {
+    const before = resolveHostTagRules(undefined).length
+    const rules = resolveHostTagRules('zenn.dev:zenn')
+    expect(rules.length).toBe(before)
+  })
+})
+
+describe('autoTagsEnabled', () => {
+  it('true when ENABLE_AUTO_TAGS is "true"', () => {
+    expect(autoTagsEnabled({ ENABLE_AUTO_TAGS: 'true' } as Bindings)).toBe(true)
+  })
+
+  it('true when legacy ENABLE_AUTO_TAG is "true" (back-compat)', () => {
+    expect(autoTagsEnabled({ ENABLE_AUTO_TAG: 'true' } as Bindings)).toBe(true)
+  })
+
+  it('false when neither is set', () => {
+    expect(autoTagsEnabled({} as Bindings)).toBe(false)
   })
 })
 
@@ -690,7 +750,7 @@ describe('POST /clip - fetch failure invariant', () => {
   })
 })
 
-// ─────────── Integration: auto-tagging (allowlist, ENABLE_AUTO_TAG off in test env) ───────────
+// ─────────── Integration: auto-tagging (allowlist, ENABLE_AUTO_TAGS off in test env) ───────────
 
 describe('POST /clip - auto tagging', () => {
   beforeEach(() => {
@@ -716,7 +776,7 @@ describe('POST /clip - auto tagging', () => {
   }
 
   it('adds allowlist host tag and keeps clipped + user tags', async () => {
-    // ENABLE_AUTO_TAG is unset in test env → no LLM call, allowlist still applies
+    // ENABLE_AUTO_TAGS is unset in test env → no LLM call, allowlist still applies
     const res = await clip('https://zenn.dev/foo/articles/tag-test-1', ['mine'])
     const json = (await res.json()) as { ok: boolean; path: string }
     expect(json.ok).toBe(true)
