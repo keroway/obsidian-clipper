@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-06-21
+- Issue: #34 (受け入れ条件は本 0007 で満たす。issue 本文の `0004-jina-fallback.md`
+  は起案時の仮番号で、実装時の ADR 番号進行に合わせ 0007 に確定した)
 
 ## Context
 

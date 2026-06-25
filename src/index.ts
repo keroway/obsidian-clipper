@@ -355,15 +355,24 @@ export async function fetchArticle(
   }
 
   // ---- Browser Rendering フォールバック (設定済みの場合のみ) ----
+  // 受け入れ条件 (#34): フォールバックの成否は console.log で残す。
   if (env.CF_ACCOUNT_ID && env.BROWSER_RENDERING_API_TOKEN) {
+    console.log(
+      `fetch fallback: trying browser-rendering for ${url} (jina: ${lastErr ?? 'failed'})`,
+    )
     try {
       const md = await fetchViaBrowserRendering(url, env)
       if (md) {
+        console.log(`fetch fallback: browser-rendering succeeded for ${url}`)
         return { md, title: extractJinaTitle(md), via: 'browser-rendering' }
       }
       lastErr = `${lastErr ?? 'jina failed'}; browser-rendering empty`
+      console.log(`fetch fallback: browser-rendering empty for ${url}`)
     } catch (e) {
       lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${(e as Error).message}`
+      console.log(
+        `fetch fallback: browser-rendering failed for ${url} (${(e as Error).message})`,
+      )
     }
   }
 
