@@ -9,6 +9,7 @@ This directory contains plans for improving the `obsidian-clipper` repository.
 | 001 | URL Duplicate Detection       | DONE   | High     | None       |
 | 002 | Fetch Robustness (Jina fallback) | TODO | High   | None       |
 | 003 | Auto Tagging                  | DONE   | Medium   | None       |
+| 004 | README i18n & Tone Rework      | DONE   | Medium   | None       |
 
 ## Status Legend
 
@@ -34,5 +35,3 @@ This directory contains plans for improving the `obsidian-clipper` repository.
 - ~~本文取得堅牢化 (HANDOFF #3) → **plan 002** (High)~~ DONE
 - ~~タグ自動付与 (HANDOFF #4) → **plan 003** (Medium)~~ DONE
 - 観測性 (HANDOFF #7) → 未起案 (Low、個人ツールでは優先度低。必要になったら plan 化)
-</content>
-</invoke>

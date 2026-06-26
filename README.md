@@ -1,184 +1,169 @@
 # obsidian-clipper
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
-[![Hono](https://img.shields.io/badge/Hono-4.x-E36002?logo=hono&logoColor=white)](https://hono.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
-[![Wrangler](https://img.shields.io/badge/Wrangler-4.x-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/wrangler/)
-[![Cloudflare R2](https://img.shields.io/badge/Cloudflare-R2-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/r2/)
-[![Workers AI](https://img.shields.io/badge/Workers%20AI-Llama%203.1-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers-ai/)
-[![Anthropic](https://img.shields.io/badge/Anthropic-Claude%20Haiku%204.5-D97757?logo=anthropic&logoColor=white)](https://docs.anthropic.com/)
-[![Jina Reader](https://img.shields.io/badge/Jina-Reader-009485)](https://jina.ai/reader/)
-[![Obsidian](https://img.shields.io/badge/Obsidian-Remotely%20Save-7C3AED?logo=obsidian&logoColor=white)](https://github.com/remotely-save/remotely-save)
+[![Hono](https://img.shields.io/badge/Hono-4.x-E36002?logo=hono&logoColor=white)](https://hono.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-> **iPhone / Mac / ブラウザから 1 タップで送った URL を、本文 + AI 要約付き Markdown として Obsidian Vault (R2) に保存する Cloudflare Worker。**
+English | [日本語](./README.ja.md)
 
-[Readwise Reader](https://readwise.io/read) や [Instapaper](https://www.instapaper.com/) のような
-"Read It Later" を、自分の Obsidian Vault に閉じた形で実現するための最小実装です。
-インフラは Cloudflare の無料枠に収まり、ロックインも回避できます。
+A self-hosted Cloudflare Worker that saves web pages as Markdown files in an Obsidian vault stored on Cloudflare R2. It is designed for people who already use Obsidian with [Remotely Save](https://github.com/remotely-save/remotely-save) and want a small Read It Later pipeline they can inspect, deploy, and modify.
+
+The Worker accepts a URL from a shortcut, bookmarklet, or script; normalizes the URL; fetches readable Markdown through Jina Reader; optionally summarizes the content with Workers AI or Anthropic; and writes the resulting note to R2. Obsidian later pulls the file through Remotely Save.
 
 > [!important]
-> **これはアプリでもホスティング済みサービスでもありません。** インストールすればすぐ使える類のものではなく、**自分の Cloudflare アカウント上に自分でデプロイして使う「手引き + 実装例 (リファレンス実装)」** です。
+> This is not a hosted service or an installable app. It is a reference implementation that you deploy to your own Cloudflare account.
 >
-> 利用するには最低限、次のことが必要です:
+> You should be comfortable with:
 >
-> - Cloudflare アカウントと R2 / Workers の有効化
-> - ターミナルでの CLI 操作 (`git` / `bun` または `npm` / `wrangler`)
-> - Obsidian + [Remotely Save](https://github.com/remotely-save/remotely-save) で R2 バケットを同期している環境
-> - クライアント (iOS ショートカット / Android HTTP Shortcuts / ブックマークレット) を自分で設定する手間
+> - Cloudflare Workers and R2
+> - command-line tools such as `git`, `bun` or `npm`, and `wrangler`
+> - Obsidian with Remotely Save configured against an R2 bucket
+> - setting up your own client entry point, such as an iOS Shortcut, Android HTTP Shortcuts, a bookmarklet, or a custom script
 >
-> 「ストアから入れてログインすれば動くスマホアプリ」を探している場合は、これは合いません。**そのまま [Readwise Reader](https://readwise.io/read) や [Instapaper](https://www.instapaper.com/)、[Raindrop.io](https://raindrop.io/) などの既製サービスを使うほうが早い**です。逆に「自前のインフラに閉じた形で組みたい」「実装を読んで作り変えたい」人向けの土台として書いています。
+> If you want a ready-made reader app, use Readwise Reader, Instapaper, Raindrop.io, or a similar service. This repository is for users who prefer to run the pipeline themselves.
 
----
+## Table of contents
 
-## 目次
+- [Features](#features)
+- [Technology stack](#technology-stack)
+- [How it works](#how-it-works)
+- [Request flow](#request-flow)
+- [Generated Markdown](#generated-markdown)
+- [Requirements](#requirements)
+- [Setup](#setup)
+- [API reference](#api-reference)
+- [Configuration reference](#configuration-reference)
+- [Clients](#clients)
+- [Operational notes](#operational-notes)
+- [Known limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-- [特徴](#特徴)
-- [技術スタック](#技術スタック)
-- [動作概要](#動作概要)
-- [リクエストフロー](#リクエストフロー)
-- [生成される Markdown](#生成される-markdown)
-- [前提条件](#前提条件)
-- [セットアップ](#セットアップ)
-- [API リファレンス](#api-リファレンス)
-- [設定リファレンス](#設定リファレンス)
-- [クライアント](#クライアント)
-- [運用上のメモ](#運用上のメモ)
-- [既知の制約](#既知の制約)
-- [ロードマップ](#ロードマップ)
-- [コントリビューション](#コントリビューション)
-- [ライセンス](#ライセンス)
+## Features
 
----
+- Save pages through `POST /clip` from iOS Shortcuts, Android HTTP Shortcuts, a browser bookmarklet, `curl`, or your own script.
+- Store notes as Markdown with Dataview-friendly frontmatter: `created`, `updated`, `source`, `source_url`, `source_title`, `tags`, and `summary`.
+- Generate optional summaries with Workers AI by default, or Anthropic Claude Haiku 4.5 when configured. If Anthropic fails, the Worker falls back to Workers AI once.
+- Add tags from a hostname allowlist, and optionally generate up to three LLM-based tags when no manual tags are provided.
+- Extract article content through Jina Reader. With `JINA_API_KEY`, rate limits are relaxed. On 429 or 503 responses, the Worker retries and can fall back to Cloudflare Browser Rendering when configured.
+- Normalize URLs by removing common tracking parameters such as `utm_*`, `gclid`, and X/Twitter share parameters. `twitter.com` and `mobile.twitter.com` are normalized to `x.com`.
+- Use Bearer authentication with a shared secret stored as a Cloudflare secret.
+- Write directly to the R2 bucket used by Remotely Save, usually under `Inbox/`.
+- Stay within Cloudflare free tiers for typical personal use.
+- Keep the Worker implementation in `src/index.ts`, with tests in `src/index.test.ts`.
 
-## 特徴
+## Technology stack
 
-- 📥 **1 タップで保存** — iOS ショートカット / Android HTTP Shortcuts / Chrome ブックマークレット / `curl` から `POST /clip` を叩くだけ。
-- 📝 **frontmatter 付き Markdown** — `created` / `source_url` / `tags` / `summary` を含む Dataview フレンドリーな形式。
-- 🧠 **AI 要約** — Workers AI (Llama 3.1 8B) または Anthropic Claude Haiku 4.5 を選択可能。Anthropic 障害時は自動で Workers AI にフォールバック。
-- 🏷️ **タグ自動付与** — ホスト名 allowlist (`zenn.dev`→`zenn` 等、`AUTO_TAGS_ALLOWLIST` で追記可) は常時、`ENABLE_AUTO_TAGS=true` なら手動タグ 0 件時に本文から LLM タグも最大 3 個付与。
-- 🪶 **本文抽出は Jina Reader** — SPA / 動的サイトでもそれなりに動く。`JINA_API_KEY` を入れれば rate limit が緩む。429/503 時は自動リトライし、なお失敗すれば Browser Rendering にフォールバック (任意設定)。
-- 🧹 **URL 正規化** — UTM / `gclid` / X の `?s` `?t` などのトラッキングパラメータを自動除去。`twitter.com` / `mobile.twitter.com` は `x.com` に揃える。
-- 🔐 **Bearer 認証** — Cloudflare Secrets で共有シークレットを管理。複数人で使うなら Cloudflare Access に切替可能。
-- 📦 **Remotely Save と相乗り** — 既存の R2 バケットの `Inbox/` に直接書き込み、Obsidian 側は普段の同期で取り込む。
-- 💰 **無料枠で運用可能** — Worker / R2 / Workers AI いずれも個人利用では無料枠内で完結。
-- 🪶 **シングルファイル実装** — Worker 本体は `src/index.ts` の ~400 行のみ。読みきれるサイズ。
+| Area | Technology | Purpose |
+| --- | --- | --- |
+| Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) | Edge runtime using V8 isolates |
+| Web framework | [Hono 4.x](https://hono.dev/) | Routing, `bearerAuth`, and CORS middleware |
+| Language | [TypeScript 5.x](https://www.typescriptlang.org/) | Strictly typed implementation |
+| Package manager | [Bun 1.x](https://bun.sh/) or npm | Dependency installation and scripts |
+| CLI | [Wrangler 4.x](https://developers.cloudflare.com/workers/wrangler/) | Local development, deployment, and secret management |
+| Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Obsidian vault storage shared with Remotely Save |
+| Default LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/llama-3.1-8b-instruct`) | Optional summaries |
+| Optional LLM | [Anthropic Claude Haiku 4.5](https://docs.anthropic.com/) | Alternative summary provider |
+| Content extraction | [Jina Reader](https://jina.ai/reader/) | URL to Markdown conversion |
+| Vault sync | [Remotely Save](https://github.com/remotely-save/remotely-save) | Obsidian to R2 synchronization |
 
-## 技術スタック
+## How it works
 
-| カテゴリ              | 技術                                                                                       | 用途                                          |
-| --------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| ランタイム            | [Cloudflare Workers](https://developers.cloudflare.com/workers/)                           | エッジ実行環境 (V8 isolate)                   |
-| Web フレームワーク    | [Hono 4.x](https://hono.dev/)                                                              | ルーティング / `bearerAuth` / `cors` ミドル   |
-| 言語                  | [TypeScript 5.x](https://www.typescriptlang.org/) (strict)                                 | 型安全な実装                                  |
-| パッケージマネージャ  | [Bun 1.x](https://bun.sh/) (npm でも可)                                                    | 依存導入 / スクリプト実行                     |
-| CLI                   | [Wrangler 4.x](https://developers.cloudflare.com/workers/wrangler/)                        | ローカル開発 / デプロイ / Secrets 管理        |
-| オブジェクトストレージ| [Cloudflare R2](https://developers.cloudflare.com/r2/)                                     | Vault バケット (Remotely Save と共用)         |
-| LLM (要約・既定)      | [Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/llama-3.1-8b-instruct`) | 日本語要約 (3〜5 文)                          |
-| LLM (要約・任意)      | [Anthropic Claude Haiku 4.5](https://docs.anthropic.com/)                                  | 高品質な日本語要約への切替先                  |
-| 本文抽出              | [Jina Reader](https://jina.ai/reader/)                                                     | URL → Markdown 変換                           |
-| Vault 同期            | [Remotely Save](https://github.com/remotely-save/remotely-save)                            | Obsidian ↔ R2 の双方向同期                   |
-
----
-
-## 動作概要
-
-クライアントが送った URL は Cloudflare の Worker でパイプライン処理され、最終的に Markdown ファイルとして R2 に格納されます。Obsidian は Remotely Save 経由で R2 を pull するため、Vault に新しいノートが現れる形になります。
+A client sends a URL to the Worker. The Worker processes it and writes one Markdown file to R2. Obsidian does not receive a direct push from the Worker; it discovers the file when Remotely Save syncs the vault.
 
 ```mermaid
 flowchart LR
-    subgraph Clients["クライアント"]
-        iOS["📱 iOS ショートカット"]
-        Android["🤖 Android HTTP Shortcuts"]
-        Mac["💻 Safari 共有"]
-        Chrome["🌐 Chrome ブックマークレット"]
-        Curl["🖥 curl / 自作スクリプト"]
+    subgraph Clients[Clients]
+        iOS[iOS Shortcut]
+        Android[Android HTTP Shortcuts]
+        Mac[Safari share sheet]
+        Chrome[Chrome bookmarklet]
+        Curl[curl or custom script]
     end
 
-    subgraph Cloudflare["Cloudflare Edge"]
-        Worker["⚡ obsidian-clipper Worker<br/>(Hono + TypeScript)"]
-        R2[("🪣 R2 Bucket<br/>Vault/Inbox/*.md")]
-        AI["🧠 Workers AI<br/>Llama 3.1 8B"]
+    subgraph Cloudflare[Cloudflare Edge]
+        Worker[obsidian-clipper Worker<br/>Hono and TypeScript]
+        R2[(R2 Bucket<br/>Vault/Inbox/*.md)]
+        AI[Workers AI<br/>Llama 3.1 8B]
     end
 
-    subgraph External["外部サービス (任意)"]
-        Jina["📰 Jina Reader<br/>r.jina.ai"]
-        Anthropic["🤖 Anthropic API<br/>Claude Haiku 4.5"]
+    subgraph External[External services, optional]
+        Jina[Jina Reader<br/>r.jina.ai]
+        Anthropic[Anthropic API<br/>Claude Haiku 4.5]
     end
 
-    subgraph Obsidian["ローカル / モバイル"]
-        Vault["📓 Obsidian Vault<br/>(Remotely Save)"]
+    subgraph Obsidian[Local or mobile]
+        Vault[Obsidian vault<br/>Remotely Save]
     end
 
-    iOS     -- "POST /clip" --> Worker
+    iOS -- "POST /clip" --> Worker
     Android -- "POST /clip" --> Worker
-    Mac     -- "POST /clip" --> Worker
-    Chrome  -- "POST /clip" --> Worker
-    Curl    -- "POST /clip" --> Worker
+    Mac -- "POST /clip" --> Worker
+    Chrome -- "POST /clip" --> Worker
+    Curl -- "POST /clip" --> Worker
 
-    Worker -- "本文 Markdown 取得" --> Jina
-    Worker -- "要約 (既定)"        --> AI
-    Worker -. "要約 (任意切替)"    .-> Anthropic
+    Worker -- "Fetch Markdown" --> Jina
+    Worker -- "Summarize by default" --> AI
+    Worker -. "Summarize when configured" .-> Anthropic
     Worker -- "PUT key=Inbox/*.md" --> R2
 
-    R2 -- "pull (Remotely Save)" --> Vault
+    R2 -- "Pull through Remotely Save" --> Vault
 
     classDef edge fill:#F38020,color:#fff,stroke:#B5601A;
-    classDef ext  fill:#0f766e,color:#fff,stroke:#0a5752;
-    classDef ai   fill:#D97757,color:#fff,stroke:#9C4C39;
+    classDef ext fill:#0f766e,color:#fff,stroke:#0a5752;
+    classDef ai fill:#D97757,color:#fff,stroke:#9C4C39;
     class Worker,R2,AI edge;
     class Jina ext;
     class Anthropic ai;
 ```
 
-## リクエストフロー
+## Request flow
 
-1 リクエストの中で起きていることを時系列で表すと次のようになります。本文取得 / 要約はどちらも失敗しても 200 を返し、最低限 URL とユーザメモは保存される設計です (詳細は [`src/index.ts`](./src/index.ts))。
+Article fetching and summarization failures do not make the clip fail. The Worker still returns `200 OK` and saves the URL and user note, with the fetch error recorded in the body section when content extraction fails.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Client (iOS / Browser)
-    participant W as Worker (Hono)
+    participant C as Client
+    participant W as Worker
     participant J as Jina Reader
-    participant L as LLM<br/>(Workers AI / Anthropic)
+    participant L as LLM
     participant R as R2 Bucket
-    participant O as Obsidian (Remotely Save)
+    participant O as Obsidian
 
-    C->>W: POST /clip<br/>Bearer SHARED_SECRET<br/>{url, title?, selection?, note?, tags?}
-    W->>W: Bearer 認証 / URL 正規化 (UTM, ?s, ?t 等を除去)
+    C->>W: POST /clip with Bearer token and JSON body
+    W->>W: Authenticate and normalize URL
 
     W->>J: GET https://r.jina.ai/<URL>
-    alt 取得成功
-        J-->>W: 本文 Markdown
-    else 429 / エラー
-        J--xW: fetchErr を本文セクションに残す
+    alt Fetch succeeds
+        J-->>W: Markdown content
+    else Fetch fails
+        J--xW: Store fetchErr for the note body
     end
 
-    opt ENABLE_SUMMARY=true かつ本文 200 文字超
-        W->>L: 要約 (3〜5 文)
-        alt Anthropic 経路が失敗
-            L--xW: 1 回だけ Workers AI にフォールバック
-        else
-            L-->>W: 要約テキスト
+    opt ENABLE_SUMMARY=true and content is long enough
+        W->>L: Generate summary
+        alt Anthropic path fails
+            L--xW: Fall back to Workers AI once
+        else Summary succeeds
+            L-->>W: Summary text
         end
     end
 
-    W->>W: frontmatter + 本文 + 要約を組み立て<br/>filename = YYYY-MM-DD_HHMMSS_<slug>.md (JST)
+    W->>W: Render frontmatter and Markdown note
     W->>R: PUT VAULT_PREFIX + INBOX_FOLDER/filename
-    R-->>W: 200 OK
+    R-->>W: OK
     W-->>C: {ok, path, bytes, summarized}
 
-    Note over R,O: 次回 Obsidian 起動時 (iOS) or 自動同期 (Mac/Win)<br/>に Vault へ反映
-    R-->>O: pull
+    Note over R,O: Obsidian sees the note on the next Remotely Save pull
+    R-->>O: Pull
 ```
 
----
+## Generated Markdown
 
-## 生成される Markdown
-
-Vault に書き出されるノートは以下の形式です。`source: web-clip` を含む frontmatter は Keep など他の移行スクリプトと共通スキーマで、Dataview から横断クエリできます。
+The Worker writes notes with the following schema. `source: web-clip` is intentionally stable so the notes can be queried together with other imported content.
 
 ```markdown
 ---
@@ -186,126 +171,121 @@ created: 2026-05-21T12:34:56+09:00
 updated: 2026-05-21T12:34:56+09:00
 source: web-clip
 source_url: "https://example.com/article"
-source_title: "記事タイトル"
+source_title: "Article title"
 tags:
   - "clipped"
   - "ios"
-summary: "結論を最初の 1 文に置いた 3〜5 文の日本語要約。"
+summary: "A three to five sentence summary."
 ---
 
-# 記事タイトル
+# Article title
 
 <https://example.com/article>
 
-> [!note] メモ
-> ユーザが共有時に追記したメモ
+> [!note] Note
+> User note supplied by the client
 
-## 要約
-結論を最初の 1 文に置いた 3〜5 文の日本語要約。
+## Summary
+A three to five sentence summary.
 
-## 抜粋
-> ページ上で選択していたテキストがあればここに入る
+## Selection
+> Text selected on the page, if provided
 
-## 本文
-(Jina Reader で抽出した記事本文 Markdown)
+## Body
+(Markdown extracted by Jina Reader)
 ```
 
-ファイル名は `YYYY-MM-DD_HHMMSS_<slugged-title>.md` (JST 固定)。タイムスタンプ付きなので同じ記事を複数回保存しても上書きされません。
+Filenames use `YYYY-MM-DD_HHMMSS_<slugged-title>.md` with a fixed JST timestamp. The timestamp prevents overwriting when the same URL is clipped more than once.
 
----
+## Requirements
 
-## 前提条件
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up)
+- An existing R2 bucket used by Remotely Save for your Obsidian vault
+  - Remotely Save encryption must be disabled. The Worker writes plain Markdown directly to R2, so encrypted Remotely Save objects cannot be read by Obsidian in this setup.
+- [Bun](https://bun.sh/) 1.x or Node.js 18+ with npm
+- Optional: a [Jina Reader API key](https://jina.ai/api-dashboard/) for higher rate limits
+- Optional: an [Anthropic API key](https://console.anthropic.com/) for Anthropic summaries
 
-- [Cloudflare アカウント](https://dash.cloudflare.com/sign-up) (無料プランで OK)
-- 既存の **R2 バケット**: [Remotely Save](https://github.com/remotely-save/remotely-save) で Vault を同期しているバケットをそのまま流用する想定
-  - Remotely Save の **暗号化は OFF** にしておくこと (Worker が直接書き込んだ Markdown を Obsidian で読めなくなるため)
-- [Bun](https://bun.sh/) 1.x または Node.js 18+ (`npm` でも代替可)
-- (任意) [Jina Reader API キー](https://jina.ai/api-dashboard/) — rate limit 緩和
-- (任意) [Anthropic API キー](https://console.anthropic.com/) — 要約品質を上げたい場合
+## Setup
 
----
-
-## セットアップ
-
-### 1. クローン & 依存インストール
+### 1. Clone the repository and install dependencies
 
 ```bash
 git clone https://github.com/keroway/obsidian-clipper.git
 cd obsidian-clipper
-bun install            # もしくは: npm install
+bun install            # or: npm install
 ```
 
-### 2. Cloudflare にログイン
+### 2. Log in to Cloudflare
 
 ```bash
 bunx wrangler login
 ```
 
-### 3. `wrangler.jsonc` を編集
+### 3. Edit `wrangler.jsonc`
 
-`bucket_name` を Remotely Save と同じ R2 バケット名に書き換え。
-prefix を使っているなら `VAULT_PREFIX` に `"MyVault/"` のように設定 (**末尾スラッシュ必須**)。使っていなければ `""` のまま。
+Set `bucket_name` to the same R2 bucket used by Remotely Save.
 
-> 確認方法: Obsidian の Remotely Save 設定 → "S3 (-compatible)" → Bucket Name / Folder。
+If your vault uses a prefix in the bucket, set `VAULT_PREFIX` to a value such as `"MyVault/"`. The trailing slash is required. If no prefix is used, leave it as `""`.
 
-### 4. 共有シークレットを登録
+You can confirm the bucket and folder in Obsidian under Remotely Save settings for S3-compatible storage.
+
+### 4. Register the shared secret
 
 ```bash
 bunx wrangler secret put SHARED_SECRET
 ```
 
-長めのランダム文字列を 1 回だけ貼り付ける。あとでブックマークレットと iOS ショートカットの両方で同じ値を使います。
+Use a long random string. The same value must be configured in your bookmarklet, shortcut, or script.
 
 ```bash
-# 例: 32 バイトのランダム文字列を生成
 openssl rand -base64 32
 ```
 
-### 5. (任意) Jina Reader API キーを登録
+### 5. Optional: register a Jina Reader API key
 
-無料・無認証でも動作しますが、初回から 429 (rate limit) を引きやすいので登録推奨。
-<https://jina.ai/api-dashboard/> でアカウントを作って API キーを取得し、Cloudflare 側にも secret として登録します。
+The Worker works without a key, but unauthenticated Jina Reader requests are more likely to hit rate limits.
 
 ```bash
 bunx wrangler secret put JINA_API_KEY
 ```
 
-未設定の場合は無認証のフォールバックで動きます。
+### 6. Optional: register an Anthropic API key
 
-### 6. (任意) Anthropic API キーを登録 — 要約品質を上げたい場合
-
-Workers AI (`@cf/meta/llama-3.1-8b-instruct`) の日本語要約品質に不満がある場合、Anthropic Claude にプロバイダを切り替えられます。
+Use this when you want Anthropic as the summary provider instead of Workers AI.
 
 ```bash
 bunx wrangler secret put ANTHROPIC_API_KEY
 ```
 
-切替は `wrangler.jsonc` の `vars.SUMMARY_PROVIDER` を `"anthropic"` に変更してデプロイ。既定モデルは Claude Haiku 4.5 (`claude-haiku-4-5-20251001`)。`vars.ANTHROPIC_MODEL` で別モデルにも差し替え可能です。
+Then set `vars.SUMMARY_PROVIDER` in `wrangler.jsonc` to `"anthropic"` and deploy. The default Anthropic model is `claude-haiku-4-5-20251001`. You can override it with `vars.ANTHROPIC_MODEL`.
 
-Anthropic ルートが 4xx / 5xx / タイムアウト (30 秒) のいずれかで失敗した場合、自動的に Workers AI へ 1 回だけフォールバックします。要約自体が完全に失敗してもクリップは成功扱いで本文は保存されます。
+If the Anthropic route returns 4xx, 5xx, or times out after 30 seconds, the Worker falls back to Workers AI once. If summarization still fails, the clip is still saved.
 
-### 7. (任意) Browser Rendering フォールバックを登録 — 本文取得の成功率を上げたい場合
+### 7. Optional: configure Browser Rendering fallback
 
-Jina Reader が 429 / 503 を返すと、まず指数バックオフで最大 2 回リトライします。それでも失敗した場合、[Cloudflare Browser Rendering](https://developers.cloudflare.com/browser-rendering/) の `POST /markdown` エンドポイントにフォールバックして本文 Markdown を取得します（SPA / JS 後挿入の本文にも強い）。
-
-有効化するには、アカウント ID と Browser Rendering 実行権限のある API トークンの **両方** を登録します。
+When Jina Reader returns 429 or 503, the Worker retries with exponential backoff. If retries still fail, it can use Cloudflare Browser Rendering's `POST /markdown` endpoint when both of these secrets are set:
 
 ```bash
 bunx wrangler secret put CF_ACCOUNT_ID
 bunx wrangler secret put BROWSER_RENDERING_API_TOKEN
 ```
 
-どちらかが未設定ならフォールバックは無効化され、従来どおり Jina のみで動作します（失敗時は本文セクションにエラー理由を残して 200）。フォールバック利用時は Browser Rendering の課金とレイテンシ増（最悪ケースで Jina リトライ + Browser Rendering の往復）が発生する点に注意してください。どの経路で取得できたかは R2 オブジェクトの `customMetadata.via`（`jina` / `jina-retry` / `browser-rendering`）で確認できます。
+If either secret is missing, the fallback is disabled. Browser Rendering can improve extraction for JavaScript-heavy pages, but it adds latency and may incur Cloudflare usage costs. The selected fetch path is recorded in R2 object `customMetadata.via` as `jina`, `jina-retry`, or `browser-rendering`.
 
-### 8. デプロイ
+### 8. Deploy
 
 ```bash
 bunx wrangler deploy
 ```
 
-出力に `https://obsidian-clipper.<your-subdomain>.workers.dev` が出るので控えておきます。
+Save the resulting Worker URL, for example:
 
-### 9. 動作確認 (curl)
+```text
+https://obsidian-clipper.<your-subdomain>.workers.dev
+```
+
+### 9. Test with curl
 
 ```bash
 curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
@@ -314,209 +294,211 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
   -d '{"url":"https://blog.cloudflare.com/workers-ai-update/","tags":["test"]}'
 ```
 
-レスポンス例:
+Example response:
 
 ```json
 { "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update.md", "bytes": 5824, "summarized": true }
 ```
 
-次回 Obsidian の Remotely Save sync で `Inbox/` に新しいノートが現れたら成功です。
+After the next Remotely Save sync, the note should appear in `Inbox/`.
 
-### 10. クライアント設定
+### 10. Configure a client
 
-- **Chrome**: [`client/bookmarklet.js`](./client/bookmarklet.js) を minify してブックマークの URL に登録
-- **iPhone / Mac**: [`client/ios-shortcut.md`](./client/ios-shortcut.md) の手順でショートカット作成
-- **Android**: [`client/android-shortcut.md`](./client/android-shortcut.md) の手順で HTTP Shortcuts を設定
+- Chrome: edit [`client/bookmarklet.js`](./client/bookmarklet.js), minify it, and save it as a bookmark URL.
+- iPhone or Mac: follow [`client/ios-shortcut.md`](./client/ios-shortcut.md).
+- Android: follow [`client/android-shortcut.md`](./client/android-shortcut.md) for HTTP Shortcuts.
 
----
-
-## API リファレンス
+## API reference
 
 ### `POST /clip`
 
-唯一のエンドポイント。Worker は他の経路は提供しません (`GET /` は使い方の説明テキストを返すだけ)。
+This is the only write endpoint. `GET /` returns short usage text.
 
-#### リクエストヘッダ
+#### Request headers
 
-| ヘッダ          | 必須 | 値                                |
-| --------------- | ---- | --------------------------------- |
-| `Authorization` | ✅   | `Bearer <SHARED_SECRET>`          |
-| `Content-Type`  | ✅   | `application/json`                |
+| Header | Required | Value |
+| --- | --- | --- |
+| `Authorization` | Yes | `Bearer <SHARED_SECRET>` |
+| `Content-Type` | Yes | `application/json` |
 
-#### リクエストボディ
+#### Request body
 
-| フィールド   | 型         | 必須 | 説明                                                              |
-| ------------ | ---------- | ---- | ----------------------------------------------------------------- |
-| `url`        | `string`   | ✅   | 保存対象 URL。トラッキングパラメータは自動除去                    |
-| `title`      | `string`   | -    | 明示指定するタイトル。未指定なら Jina Reader が抽出したものを使用 |
-| `selection`  | `string`   | -    | ページ上で選択していたテキスト (引用ブロックとして保存)           |
-| `note`       | `string`   | -    | ユーザのメモ (`> [!note]` callout として保存)                     |
-| `tags`       | `string[]` | -    | 追加タグ。`clipped` + allowlist/LLM タグと統合される             |
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `url` | `string` | Yes | URL to save. Tracking parameters are removed automatically. |
+| `title` | `string` | No | Explicit title. If omitted, the extracted title is used when available. |
+| `selection` | `string` | No | Selected text from the page. Saved as a quote block. |
+| `note` | `string` | No | User note. Saved as a `> [!note]` callout. |
+| `tags` | `string[]` | No | Additional tags merged with `clipped`, allowlist tags, and optional LLM tags. |
 
-#### レスポンス
+#### Response
 
-| ステータス | 内容                                                        |
-| ---------- | ----------------------------------------------------------- |
-| `200`      | `{ ok: true, path, bytes, summarized }`                     |
-| `400`      | `{ ok: false, error: 'invalid JSON body' \| 'url is required' \| 'invalid url' }` |
-| `401`      | `{ ok: false, error: 'Unauthorized' }` (Bearer 不一致)      |
-| `500`      | `{ ok: false, error: <unhandled error message> }`           |
+| Status | Body |
+| --- | --- |
+| `200` | Success JSON or duplicate JSON |
+| `400` | `{ ok: false, error: 'invalid JSON body' \| 'url is required' \| 'invalid url' }` |
+| `401` | `{ ok: false, error: 'Unauthorized' }` |
+| `500` | `{ ok: false, error: <unhandled error message> }` |
 
-> **失敗ポリシー**: Jina Reader / 要約のどちらが失敗しても 200 を返します。Jina が 429/503 のときは指数バックオフで最大 2 回リトライし、なお失敗かつ Browser Rendering が設定済みならそちらにフォールバックします。それでも本文が取れなかった場合は本文セクションにエラー理由が残るだけで、URL とユーザメモは保存されます。
+Jina Reader and summary failures do not change the response to an error status. The Worker records the failure in the note or logs it, then saves the clip.
 
----
+## Configuration reference
 
-## 設定リファレンス
+### Variables in `wrangler.jsonc`
 
-### 環境変数 (`wrangler.jsonc` の `vars`)
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VAULT_PREFIX` | `""` | Prefix for the vault in R2. Must be empty or end with `/`. |
+| `INBOX_FOLDER` | `"Inbox"` | Destination folder relative to the vault root. |
+| `ENABLE_SUMMARY` | `"true"` | Enables summarization. |
+| `ENABLE_AUTO_TAGS` | `"false"` | Generates LLM tags when no manual tags are supplied. The legacy name `ENABLE_AUTO_TAG` is also accepted. |
+| `AUTO_TAGS_ALLOWLIST` | `""` | Additional fixed hostname tags, for example `zenn.dev:zenn,github.com:github`. |
+| `SUMMARY_MODEL` | `"@cf/meta/llama-3.1-8b-instruct"` | Workers AI model. |
+| `SUMMARY_PROVIDER` | `"workers-ai"` | `"workers-ai"` or `"anthropic"`. |
+| `ANTHROPIC_MODEL` | `"claude-haiku-4-5-20251001"` | Anthropic model ID. |
 
-| 変数                  | 既定値                          | 説明                                                                 |
-| --------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| `VAULT_PREFIX`        | `""`                            | Vault が R2 上で持つ prefix。**末尾スラッシュ必須**または空文字       |
-| `INBOX_FOLDER`        | `"Inbox"`                       | Vault ルートからの保存先サブフォルダ                                 |
-| `ENABLE_SUMMARY`      | `"true"`                        | 要約を有効化するか                                                   |
-| `ENABLE_AUTO_TAGS`    | `"false"`                       | 手動タグが 0 件のとき本文から LLM タグを生成 (旧名 `ENABLE_AUTO_TAG` も後方互換で可) |
-| `AUTO_TAGS_ALLOWLIST` | `""`                            | ホスト名固定タグ。`zenn.dev:zenn,github.com:github` 形式。既定ルールに追記 |
-| `SUMMARY_MODEL`       | `"@cf/meta/llama-3.1-8b-instruct"` | Workers AI で使うモデル                                              |
-| `SUMMARY_PROVIDER`    | `"workers-ai"`                  | `"workers-ai"` または `"anthropic"`                                  |
-| `ANTHROPIC_MODEL`     | `"claude-haiku-4-5-20251001"`   | Anthropic を使う場合のモデル ID                                      |
+### Secrets
 
-### シークレット (`wrangler secret put`)
+| Secret | Required | Description |
+| --- | --- | --- |
+| `SHARED_SECRET` | Yes | Shared secret for Bearer authentication. |
+| `JINA_API_KEY` | No | Increases Jina Reader rate limits. |
+| `ANTHROPIC_API_KEY` | No | Required when `SUMMARY_PROVIDER=anthropic`. |
+| `NOTIFY_WEBHOOK_URL` | No | Webhook URL for failure notifications, compatible with Discord or Slack-style endpoints. |
+| `CF_ACCOUNT_ID` | No | Cloudflare account ID for Browser Rendering fallback. |
+| `BROWSER_RENDERING_API_TOKEN` | No | API token for Browser Rendering fallback. Used together with `CF_ACCOUNT_ID`. |
 
-| シークレット        | 必須 | 説明                                                              |
-| ------------------- | ---- | ----------------------------------------------------------------- |
-| `SHARED_SECRET`     | ✅   | Bearer 認証用の共有シークレット                                   |
-| `JINA_API_KEY`      | -    | Jina Reader の rate limit を緩和                                  |
-| `ANTHROPIC_API_KEY` | -    | `SUMMARY_PROVIDER=anthropic` のときに使用                         |
-| `NOTIFY_WEBHOOK_URL` | -   | 失敗通知先 Webhook URL (Discord/Slack 互換)                      |
-| `CF_ACCOUNT_ID`     | -    | Browser Rendering フォールバック用のアカウント ID                |
-| `BROWSER_RENDERING_API_TOKEN` | - | Browser Rendering 実行権限のある API トークン (上記とセットで有効) |
+### Bindings
 
-### バインディング
+| Binding | Type | Description |
+| --- | --- | --- |
+| `VAULT` | R2 Bucket | Bucket shared with Remotely Save. |
+| `AI` | Workers AI | Default summary provider. |
 
-| バインディング | 種別      | 説明                                          |
-| -------------- | --------- | --------------------------------------------- |
-| `VAULT`        | R2 Bucket | Remotely Save と共用する Vault バケット       |
-| `AI`           | Workers AI | 既定の要約プロバイダ                          |
+## Clients
 
----
+### Chrome bookmarklet
 
-## クライアント
+[`client/bookmarklet.js`](./client/bookmarklet.js) is the readable source version. Replace `WORKER_URL` and `SECRET`, minify it with a bookmarklet minifier, and save the result as the bookmark URL.
 
-### Chrome ブックマークレット
+When run, it sends the current page URL, title, and selected text to the Worker and shows the result in a small toast.
 
-[`client/bookmarklet.js`](./client/bookmarklet.js) は読みやすい非 minify 版です。`WORKER_URL` と `SECRET` を自分の値に書き換え、[bookmarklet minifier](https://chriszarate.github.io/bookmarklet/) などで minify してブックマークの URL に登録してください。
+### iOS Shortcuts
 
-実行すると現在ページの URL / タイトル / 選択範囲を Worker に POST し、右下にトーストで結果を表示します。
+[`client/ios-shortcut.md`](./client/ios-shortcut.md) describes how to build a shortcut that sends a URL and optional note from the share sheet. The same approach can be used from macOS Safari's share sheet.
 
-### iOS ショートカット
+### Android HTTP Shortcuts
 
-[`client/ios-shortcut.md`](./client/ios-shortcut.md) に手順を記載しています。共有シートから 1 タップで URL とメモを Worker に送れます (Apple Watch / Mac Safari 共有シートにも展開可能)。
+[`client/android-shortcut.md`](./client/android-shortcut.md) describes how to configure [HTTP Shortcuts](https://http-shortcuts.rmy.ch/). Android Chrome does not support running bookmarklets directly from the share sheet, so HTTP Shortcuts is the recommended Android client.
 
-### Android (HTTP Shortcuts)
+## Operational notes
 
-[`client/android-shortcut.md`](./client/android-shortcut.md) に手順を記載しています。Android の Chrome はブックマークレットを共有シートから起動できないため、無料・OSS の [HTTP Shortcuts](https://http-shortcuts.rmy.ch/) を使い、共有シートから 1 タップで `POST /clip` を叩きます (Android 11+ は Direct Share にも対応)。
+### Remotely Save sync timing
 
----
+- macOS and Windows: sync manually or enable Remotely Save's sync-on-change behavior.
+- iOS: Remotely Save generally pulls when Obsidian is opened.
 
-## 運用上のメモ
+The Worker only writes to R2. Immediate delivery into an open Obsidian mobile
+vault is outside the scope of this project.
 
-### Remotely Save の同期タイミング
+### Duplicate URLs
 
-- **Mac / Windows**: 起動中であれば手動同期 or "Sync on file change" を有効化
-- **iOS**: Obsidian 起動時にのみ pull が走るのが基本
+The Worker keeps a URL index at `Inbox/.index/urls.json`. When the same
+normalized URL is clipped again, it returns `{ ok: false, duplicate: true, path }`.
 
-→ クリップ即時反映は仕様外。「次に Obsidian を開いたら来ている」体験で割り切ること。
+Add `?refresh=1` to `POST /clip` when you intentionally want to save a fresh
+copy and update the index.
 
-### 重複 URL
+### Cost
 
-意図的に重複検知を入れていません (タイムスタンプでファイル名が割れるので衝突はしない)。同じ記事を 2 回保存してしまうことが多い場合は [`HANDOFF.md`](./HANDOFF.md) の TODO を参照してください。
+For personal use, the expected usage normally fits within free tiers:
 
-### コスト
+| Service | Free tier note | Expected personal use |
+| --- | --- | --- |
+| Workers | 100,000 requests per day | Tens of requests per day |
+| R2 | 10 GB-month storage | A few KB per note |
+| Workers AI | 10,000 neurons per day | A few neurons per summary |
+| Jina Reader | Free access; key raises limits | Below personal-use limits |
+| Anthropic | Usage-based, only when enabled | Low cost with Haiku 4.5 |
 
-個人利用前提なら **すべて無料枠に収まる** 想定です:
+### Security
 
-| サービス     | 無料枠                                | 想定使用量                |
-| ------------ | ------------------------------------- | ------------------------- |
-| Workers      | 1 日 10 万リクエスト                  | 1 日 数十リクエスト       |
-| R2           | 10 GB / 月、Class A 100 万 / 月       | Markdown は 1 件 数 KB    |
-| Workers AI   | 1 日 10,000 neurons                   | 要約 1 回 ~数 neurons     |
-| Jina Reader  | 無料・無認証 (key で rate limit 緩和) | 個人用途では到達しない    |
-| Anthropic    | 従量課金 (使う場合のみ)               | Haiku 4.5 は非常に安価    |
+The default setup uses one Bearer token because this project targets personal use.
 
-### セキュリティ
+- For a shared deployment, consider putting the Worker behind
+  [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/).
+- If `SHARED_SECRET` is exposed, rotate it with
+  `wrangler secret put SHARED_SECRET` and update all clients.
+- CORS is open because bookmarklets need to call the Worker from arbitrary
+  pages. Requests without the Bearer token are rejected.
 
-個人利用前提のため Bearer 1 本でシンプルにしてあります。
+#### Secret leak detection
 
-- 複数人で共有する場合は [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/) (Zero Trust, 個人プラン無料) に切り替えて IdP 経由の認証に
-- `SHARED_SECRET` を漏らした場合は `wrangler secret put SHARED_SECRET` で上書きすれば即時無効化されます (新シークレットを各クライアントに再配布)
-- CORS は `*` で開いています (ブックマークレットから叩く前提)。Bearer がないと弾かれるので実害はありませんが、気になる場合は `src/index.ts` の `cors({ origin: ... })` を絞ってください
+Secrets such as `SHARED_SECRET`, `JINA_API_KEY`, and `ANTHROPIC_API_KEY` must
+be stored in Cloudflare Secrets and must not be committed. Local `.dev.vars` is
+ignored by git.
 
-#### Secret 漏洩の検知
+Recommended GitHub repository settings:
 
-Worker 用の secret (`SHARED_SECRET` / `JINA_API_KEY` / `ANTHROPIC_API_KEY`) は **Cloudflare Secrets** で管理し、リポジトリには絶対にコミットしない方針です。ローカル開発用の `.dev.vars` も `.gitignore` 済みです。
+1. Open Settings, Code security, Secret protection.
+2. Enable Secret scanning.
+3. Enable Push protection.
+4. Optionally enable Validity checks.
 
-その上で、誤コミットを多層で防ぐためにリポジトリ側で以下を有効化することを推奨します。GitHub UI 側の操作 (リポジトリオーナーのみ可能) は以下:
+This repository also includes a [`gitleaks`](https://github.com/gitleaks/gitleaks)
+workflow at [`.github/workflows/gitleaks.yml`](./.github/workflows/gitleaks.yml).
 
-1. **Settings → Code security → Secret protection** を開く
-2. **Secret scanning** を Enable
-3. **Push protection** を Enable (これで生 token を含む push 自体が GitHub 側でブロックされる)
-4. (任意) **Validity checks** を Enable: 検知された token が live かどうかも自動チェック
+#### Supply chain protection
 
-CI 側では [`gitleaks`](https://github.com/gitleaks/gitleaks) を [`.github/workflows/gitleaks.yml`](./.github/workflows/gitleaks.yml) で push / PR / 週次に走らせています。GitHub 標準の Secret Scanning が拾わないパターン (独自 token など) もここで検知できます。
+The project uses an install-time age gate to reduce exposure to newly published
+malicious package versions.
 
-#### サプライチェーン保護 (汚染パッケージ対策)
+- Bun: [`bunfig.toml`](./bunfig.toml) sets
+  `[install].minimumReleaseAge = 604800` seconds.
+- npm: [`.npmrc`](./.npmrc) sets `minimum-release-age=10080` minutes. npm
+  11.5.1 or newer is required.
 
-npm パッケージは公開直後にマルウェアが紛れ込むことがあり、検知されるまで数時間〜数日かかります。これに備えて install 段階で **公開から 7 日経過していない version をブロック** する age gate を効かせています。
+Other practices:
 
-- **Bun**: [`bunfig.toml`](./bunfig.toml) の `[install].minimumReleaseAge = 604800` (秒)
-- **npm**: [`.npmrc`](./.npmrc) の `minimum-release-age=10080` (分。npm 11.5.1+ が必要)
+- Commit `bun.lock` and use `bun install --frozen-lockfile` in CI.
+- Update dependencies through [Dependabot](./.github/dependabot.yml).
+- Consider pinning GitHub Actions by SHA for stricter supply-chain control.
 
-緊急の zero-day patch を取り込みたい場合は、それぞれ `minimumReleaseAgeExcludes` / `minimum-release-age-exclude` にパッケージ名を追加します。
+## Known limitations
 
-その他のサプライチェーン関連の運用:
+- Jina Reader works well for many articles but cannot extract paywalled content.
+  JavaScript-heavy pages may require the optional Browser Rendering fallback.
+- Android Chrome cannot run bookmarklets from the share sheet. Use HTTP
+  Shortcuts instead.
+- On iOS, the note appears after Obsidian and Remotely Save perform a pull.
+- Remotely Save encryption must be disabled for this pipeline.
+- Timestamps are fixed to JST (`+09:00`). Change `jstStamp` and `jstIso` in
+  `src/index.ts` if you need another time zone.
 
-- **lockfile (`bun.lock`) は必ずコミット**。`bun install --frozen-lockfile` を CI で走らせるので、勝手にバージョンが上がる経路は無い
-- **依存更新は [Dependabot](./.github/dependabot.yml) 経由のみ**。週次で `npm` / `github-actions` の 2 系統に PR が来るので、CI (`typecheck`) と Diff を見てマージする
-- **GitHub Actions は SHA ピン留め推奨**。Dependabot は SHA も更新してくれるので、本格化する場合は `gitleaks-action@v2` を SHA に切り替え
+## Roadmap
 
----
+Open implementation notes and historical TODOs are tracked in
+[`HANDOFF.md`](./HANDOFF.md) and [`plans/`](./plans/). Completed items include
+duplicate URL detection, Anthropic summaries with Workers AI fallback, Browser
+Rendering fallback, automatic tags, failure notifications, and Vitest coverage.
 
-## 既知の制約
+The remaining low-priority candidate is observability through Workers Logpush or
+related Cloudflare logging features.
 
-- **本文抽出の限界**: Jina Reader は媒体記事には強いものの、paywall コンテンツは取れません。SPA / JS 後挿入の本文は [Cloudflare Browser Rendering API](https://developers.cloudflare.com/browser-rendering/) フォールバック (任意設定) でカバーできます。
-- **Android Chrome のブックマークレット非対応**: アドレスバー経由でしか起動できず共有シートから使えないため、Android では [HTTP Shortcuts](./client/android-shortcut.md) を使います。
-- **iOS の即時性**: Obsidian 起動時にしか Remotely Save の pull が走らないため、保存と Vault 反映には時差があります。
-- **Remotely Save の暗号化**: ON にすると Worker 直書きのファイルが Obsidian 側で読めなくなります。OFF 必須。
-- **JST 固定**: タイムスタンプは JST (`+09:00`) でハードコードしています。他タイムゾーンで使う場合は `src/index.ts` の `jstStamp` / `jstIso` を編集してください。
-- **テスト未導入**: vitest + `@cloudflare/vitest-pool-workers` での導入は [`HANDOFF.md`](./HANDOFF.md) の TODO 参照。
+Feature work should start with an ADR in `docs/adr/`.
 
----
+## Contributing
 
-## ロードマップ
+Issues and pull requests are welcome.
 
-未実装の TODO とそれぞれの設計指針は [`HANDOFF.md`](./HANDOFF.md) にまとめています。主な候補:
+- For bugs, include reproduction steps, an example request, and relevant
+  `wrangler tail` output with secrets redacted.
+- For feature requests, check [`HANDOFF.md`](./HANDOFF.md) and existing plans
+  first.
+- For code changes, run `bun run typecheck`. Keep TypeScript strict mode,
+  Wrangler v4, and Hono 4.x.
 
-- URL 重複検知 (`Inbox/.index/urls.json` ベース)
-- ~~Jina Reader 障害時の Browser Rendering フォールバック~~ (実装済み)
-- ~~本文 + ホスト名からのタグ自動付与 (LLM タグ含む)~~ (実装済み)
-- Slack / Discord への失敗通知 webhook
-- vitest によるユニット / 統合テスト
-- Workers Logpush による観測性
-
-機能追加の際は `docs/adr/` に ADR を書いてから着手する方針です (現状ディレクトリ未作成)。
-
----
-
-## コントリビューション
-
-Issue / PR は歓迎します。
-
-- バグ報告: 再現手順 (リクエスト例 / `wrangler tail` 抜粋) を含めてください
-- 機能提案: まず [`HANDOFF.md`](./HANDOFF.md) を参照し、既出 TODO ならその上に積む形で議論しましょう
-- コードを書く場合: `bun run typecheck` を通すこと。TypeScript strict と Wrangler v4 / Hono ^4 を維持
-
-開発の最短ループは:
+Local development loop:
 
 ```bash
 bun run dev
@@ -526,17 +508,14 @@ curl -X POST http://127.0.0.1:8787/clip \
   -d '{"url":"https://example.com/article","tags":["test"]}'
 ```
 
-ローカル開発時の `SHARED_SECRET` などは `.dev.vars` に書いておくと `wrangler dev` が読み込みます (このファイルは `.gitignore` 済み)。
+For local secrets, create `.dev.vars`. This file is ignored by git.
 
 ```env
-# .dev.vars
 SHARED_SECRET=local-development-secret
 JINA_API_KEY=
 ANTHROPIC_API_KEY=
 ```
 
----
-
-## ライセンス
+## License
 
 [MIT License](./LICENSE) — Copyright (c) 2026 keroway
