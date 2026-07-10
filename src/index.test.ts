@@ -9,19 +9,18 @@
 
 import { env, SELF } from 'cloudflare:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Bindings } from './index'
+import type { Bindings } from './bindings'
+import { fetchArticle } from './fetch-article'
+import { renderNote, sanitizeForFilename } from './note'
 import {
   autoTagsEnabled,
-  fetchArticle,
   hostTagsFor,
   mergeTags,
   normalizeTag,
-  normalizeUrl,
-  renderNote,
   resolveHostTagRules,
-  sanitizeForFilename,
-  sha1Hex,
-} from './index'
+} from './tags'
+import { normalizeUrl } from './url'
+import { readUrlIndex, sha1Hex, writeUrlIndexCAS } from './url-index'
 
 // ─────────────────────────── normalizeUrl ───────────────────────────
 
@@ -155,6 +154,7 @@ describe('renderNote', () => {
     summary: '',
     body: 'Article body content',
     createdIso: '2026-06-13T12:00:00+09:00',
+    tags: ['clipped'],
   }
 
   it('includes required frontmatter keys: created', () => {
@@ -194,7 +194,10 @@ describe('renderNote', () => {
   })
 
   it('includes user-specified tags', () => {
-    const note = renderNote({ ...baseOpts, tags: ['tech', 'cloudflare'] })
+    const note = renderNote({
+      ...baseOpts,
+      tags: ['clipped', 'tech', 'cloudflare'],
+    })
     expect(note).toContain('"tech"')
     expect(note).toContain('"cloudflare"')
   })
@@ -275,6 +278,72 @@ describe('sha1Hex', () => {
     const h1 = await sha1Hex('https://example.com/a')
     const h2 = await sha1Hex('https://example.com/b')
     expect(h1).not.toBe(h2)
+  })
+})
+
+describe('writeUrlIndexCAS', () => {
+  const indexKey = 'test-cas-index.json'
+
+  it('writes a new index when none exists', async () => {
+    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+      index.abc = { path: 'Inbox/a.md', createdAt: '2026-01-01T00:00:00+09:00' }
+    })
+    const { index } = await readUrlIndex(env.VAULT, indexKey)
+    expect(index.abc.path).toBe('Inbox/a.md')
+  })
+
+  it('merges into an existing index without losing prior entries', async () => {
+    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+      index.one = {
+        path: 'Inbox/one.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+      index.two = {
+        path: 'Inbox/two.md',
+        createdAt: '2026-01-02T00:00:00+09:00',
+      }
+    })
+    const { index } = await readUrlIndex(env.VAULT, indexKey)
+    expect(index.one.path).toBe('Inbox/one.md')
+    expect(index.two.path).toBe('Inbox/two.md')
+  })
+
+  it('does not lose an entry written concurrently between calls', async () => {
+    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+      index.base = {
+        path: 'Inbox/base.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+
+    // Simulate a concurrent writer committing directly (bypassing CAS) after we
+    // would have read the index but before our own write lands.
+    await env.VAULT.put(
+      indexKey,
+      JSON.stringify({
+        base: { path: 'Inbox/base.md', createdAt: '2026-01-01T00:00:00+09:00' },
+        concurrent: {
+          path: 'Inbox/concurrent.md',
+          createdAt: '2026-01-03T00:00:00+09:00',
+        },
+      }),
+    )
+
+    // writeUrlIndexCAS reads fresh on each call, so it must pick up the
+    // concurrently-written entry rather than clobbering it.
+    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+      index.mine = {
+        path: 'Inbox/mine.md',
+        createdAt: '2026-01-04T00:00:00+09:00',
+      }
+    })
+
+    const { index } = await readUrlIndex(env.VAULT, indexKey)
+    expect(index.base.path).toBe('Inbox/base.md')
+    expect(index.concurrent.path).toBe('Inbox/concurrent.md')
+    expect(index.mine.path).toBe('Inbox/mine.md')
   })
 })
 
@@ -613,6 +682,47 @@ describe('POST /clip integration', () => {
     // UTM param should be stripped
     expect(content).not.toContain('utm_source')
   })
+
+  it('returns bytes as actual UTF-8 byte length (not UTF-16 code unit count)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url = input.toString()
+        if (url.startsWith('https://r.jina.ai/')) {
+          return new Response('Title: 日本語記事\n\nこれは日本語の本文です。', {
+            status: 200,
+          })
+        }
+        return new Response('Not Found', { status: 404 })
+      },
+    )
+
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify({ url: 'https://example.com/ja-article' }),
+    })
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as {
+      ok: boolean
+      path: string
+      bytes: number
+    }
+    expect(json.ok).toBe(true)
+    const stored = await env.VAULT.get(json.path)
+    expect(stored).not.toBeNull()
+    // biome-ignore lint/style/noNonNullAssertion: expect() assertion above guarantees non-null
+    const content = await stored!.text()
+    const utf16Length = content.length
+    const utf8Length = new TextEncoder().encode(content).length
+    // Japanese text: UTF-8 byte length must exceed UTF-16 code unit count,
+    // and the response must report the UTF-8 byte length.
+    expect(utf8Length).toBeGreaterThan(utf16Length)
+    expect(json.bytes).toBe(utf8Length)
+  })
 })
 
 // ─────────────────────────── Integration: duplicate detection ───────────────────────────
@@ -703,6 +813,35 @@ describe('POST /clip - duplicate detection', () => {
     expect(json3.ok).toBe(false)
     expect(json3.duplicate).toBe(true)
     expect(json3.path).toBe(json2.path)
+  })
+
+  it('allows re-clipping when the indexed file no longer exists in R2 (ADR 0010)', async () => {
+    mockJina()
+    const url = 'https://example.com/dedup-deleted-file-unique-1'
+
+    const res1 = await clipUrl(url)
+    expect(res1.status).toBe(200)
+    const json1 = (await res1.json()) as { ok: boolean; path: string }
+    expect(json1.ok).toBe(true)
+
+    // Simulate the user moving/deleting the clipped file from Obsidian.
+    await env.VAULT.delete(json1.path)
+
+    // Re-clipping the same URL should NOT be treated as a duplicate anymore,
+    // since the indexed file no longer exists.
+    const res2 = await clipUrl(url)
+    expect(res2.status).toBe(200)
+    const json2 = (await res2.json()) as {
+      ok: boolean
+      duplicate?: boolean
+      path: string
+    }
+    expect(json2.ok).toBe(true)
+    expect(json2.duplicate).toBeUndefined()
+
+    // The new file should actually exist in R2.
+    const stored = await env.VAULT.get(json2.path)
+    expect(stored).not.toBeNull()
   })
 })
 

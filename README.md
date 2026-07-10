@@ -404,10 +404,16 @@ vault is outside the scope of this project.
 ### Duplicate URLs
 
 The Worker keeps a URL index at `Inbox/.index/urls.json`. When the same
-normalized URL is clipped again, it returns `{ ok: false, duplicate: true, path }`.
+normalized URL is clipped again **and the previously saved file still exists**,
+it returns `{ ok: false, duplicate: true, path }`. If you have since moved or
+deleted that file from your vault, the same URL can be clipped again (the index
+entry alone is not treated as a duplicate).
 
 Add `?refresh=1` to `POST /clip` when you intentionally want to save a fresh
 copy and update the index.
+
+The index is updated with an optimistic-lock (compare-and-swap) write so that
+concurrent clips do not lose each other's entries.
 
 ### Cost
 
