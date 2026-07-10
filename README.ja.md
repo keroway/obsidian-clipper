@@ -402,9 +402,11 @@ Worker は R2 に書き込むだけです。開いているモバイル版 Obsid
 
 ### 重複 URL
 
-Worker は `Inbox/.index/urls.json` に URL index を保持します。同じ正規化済み URL が再度送られた場合は `{ ok: false, duplicate: true, path }` を返します。
+Worker は `Inbox/.index/urls.json` に URL index を保持します。同じ正規化済み URL が再度送られ、**かつ以前保存したファイルがまだ存在する場合**に `{ ok: false, duplicate: true, path }` を返します。vault からそのファイルを移動/削除した後なら、同じ URL を再度クリップできます (index エントリ単体では重複とみなしません)。
 
 意図的に新しいコピーを保存して index を更新したい場合は、`POST /clip` に `?refresh=1` を付けてください。
+
+index の更新は楽観ロック (compare-and-swap) で行うため、同時クリップで互いのエントリを失いません。
 
 ### コスト
 

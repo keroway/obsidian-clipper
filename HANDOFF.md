@@ -8,7 +8,7 @@
 ## 引き継ぎ用プロンプト (Claude Code に貼る)
 
 > 以下のリポジトリ `obsidian-clipper` は、Cloudflare Worker (Hono + TypeScript) で
-> URL を受け取り、Jina Reader (https://r.jina.ai/) で本文 Markdown 化、
+> URL を受け取り、Jina Reader (<https://r.jina.ai/>) で本文 Markdown 化、
 > Workers AI で要約、Remotely Save が使う R2 バケットの `Inbox/` フォルダに
 > frontmatter 付き Markdown を PUT する Read It Later パイプラインです。
 >
@@ -66,16 +66,16 @@
 
 ## 関連リンクと根拠
 
-- Cloudflare Workers (Hono): https://hono.dev/docs/getting-started/cloudflare-workers
-- Cloudflare R2 Workers API: https://developers.cloudflare.com/r2/api/workers/workers-api-reference/
-- Workers AI models 一覧: https://developers.cloudflare.com/workers-ai/models/
-- Workers AI 価格 / 無料枠: https://developers.cloudflare.com/workers-ai/platform/pricing/
-- Jina Reader 仕様: https://jina.ai/reader/
-- Remotely Save README: https://github.com/remotely-save/remotely-save
-- Cloudflare Access (Zero Trust, 個人プラン無料): https://developers.cloudflare.com/cloudflare-one/applications/
-- vitest-pool-workers: https://developers.cloudflare.com/workers/testing/vitest-integration/
-- HTTP semantics (RFC 9110): https://datatracker.ietf.org/doc/html/rfc9110
-- Problem Details (RFC 9457): https://datatracker.ietf.org/doc/html/rfc9457
+- Cloudflare Workers (Hono): <https://hono.dev/docs/getting-started/cloudflare-workers>
+- Cloudflare R2 Workers API: <https://developers.cloudflare.com/r2/api/workers/workers-api-reference/>
+- Workers AI models 一覧: <https://developers.cloudflare.com/workers-ai/models/>
+- Workers AI 価格 / 無料枠: <https://developers.cloudflare.com/workers-ai/platform/pricing/>
+- Jina Reader 仕様: <https://jina.ai/reader/>
+- Remotely Save README: <https://github.com/remotely-save/remotely-save>
+- Cloudflare Access (Zero Trust, 個人プラン無料): <https://developers.cloudflare.com/cloudflare-one/applications/>
+- vitest-pool-workers: <https://developers.cloudflare.com/workers/testing/vitest-integration/>
+- HTTP semantics (RFC 9110): <https://datatracker.ietf.org/doc/html/rfc9110>
+- Problem Details (RFC 9457): <https://datatracker.ietf.org/doc/html/rfc9457>
 
 ## 要約モデル比較ハーネス (Issue #16)
 
@@ -97,9 +97,10 @@ bun run compare:summary                       # sample-articles.txt の URL を�
 bun run compare:summary --models @cf/a,@cf/b  # 候補モデルを上書き
 ```
 
-> **注意**: `scripts/compare-summary-models.ts` 内の `SUMMARY_SYSTEM_PROMPT` /
-> `SUMMARY_EXCERPT_LIMIT` / `buildSummaryUserPrompt` / `max_tokens` は `src/index.ts` の
-> コピー。本番側を変えたらスクリプト側も必ず同期すること (比較の忠実性のため)。
+> **注記 (ADR 0009 で解消済み)**: `SUMMARY_SYSTEM_PROMPT` / `SUMMARY_EXCERPT_LIMIT` /
+> `buildSummaryUserPrompt` / `SUMMARY_MAX_TOKENS` は `src/prompts.ts` を `scripts/compare-summary-models.ts`
+> と本番 Worker (`src/llm.ts`) が共有している。以前はスクリプト側に手動コピーしており
+> 「必ず同期」する運用負債があったが、共有モジュール化により不要になった。
 
 ### 比較結果と決定 (#16 / #17)
 

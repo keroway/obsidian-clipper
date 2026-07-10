@@ -24,7 +24,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-リクエスト 1 本 = R2 ファイル 1 本のパイプライン。実装は `src/index.ts` 単一ファイル。
+リクエスト 1 本 = R2 ファイル 1 本のパイプライン。実装は `src/index.ts` (Hono ルータ) を中心に、責務ごとに
+`src/*.ts` に分割している (ADR 0009)。詳細は本ファイルの「ファイル地図」参照。
 
 1. `POST /clip` を Hono で受ける。`bearerAuth` で `SHARED_SECRET` を検証、CORS は `*` (ブックマークレット / iOS ショートカットから叩く前提)。
 2. `normalizeUrl()` で UTM / `gclid` / X の `?s` `?t` 等を除去し、`mobile.twitter.com` と `twitter.com` を `x.com` に揃える。許可リストは `TRACKING_PARAMS`。
@@ -32,6 +33,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 4. `ENABLE_SUMMARY === 'true'` かつ本文 200 文字超なら `summarize()` で Workers AI (`SUMMARY_MODEL`, 既定 `@cf/meta/llama-3.1-8b-instruct`) に投げる。
 5. JST タイムスタンプ + サニタイズ済みタイトルで `YYYY-MM-DD_HHMMSS_<slug>.md` を組み立て、`${VAULT_PREFIX}${INBOX_FOLDER}/${filename}` を key として `c.env.VAULT.put`。
 6. Obsidian 側は Remotely Save が R2 を pull することでノートを取り込む (Worker は Obsidian に直接触らない)。
+
+**重複検知** (`src/url-index.ts`, ADR 0003 / 0010): `Inbox/.index/urls.json` に `sha1(url) → { path, createdAt }` を保持。同じ正規化済み URL が再クリップされ、**かつ index が指すファイルが R2 上に実在する**場合のみ `duplicate: true` を返す (`VAULT.head()` で確認)。Inbox から移動/削除済みなら再クリップを許可。index 更新は R2 の条件付き PUT (`onlyIf`) による楽観ロック (`writeUrlIndexCAS`) で、同時クリップの lost update を防ぐ。`?refresh=1` で重複を無視して上書き保存。
 
 **失敗ポリシー**: 本文取得失敗 / 要約失敗のどちらも握り潰して 200 を返す。Jina 失敗時は `fetchErr` を本文セクションに残し、要約失敗は `console.warn` のみ。URL とユーザメモだけでも保存されるのが MVP の合意なので、ここで HTTPException を投げないこと。
 
@@ -56,7 +59,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ファイル地図
 
-- `src/index.ts` — Worker 全部 (ルータ + ユーティリティ)。新規ユーティリティもまずここに足し、肥大化したら分割を検討。
+- `src/index.ts` — Hono ルータ本体 (`POST /clip` ハンドラ) のみ。ロジックは以下に分割済み:
+  - `src/bindings.ts` — `Bindings` 型 (循環 import 回避のため単独ファイル)
+  - `src/url.ts` — `normalizeUrl` / `hostname`
+  - `src/fetch-article.ts` — Jina Reader 取得 + リトライ + Browser Rendering フォールバック
+  - `src/llm.ts` — 要約・タグ生成 (Workers AI / Anthropic 呼び出し)
+  - `src/prompts.ts` — 要約・タグ生成のプロンプト定数 (`scripts/compare-summary-models.ts` と共有)
+  - `src/tags.ts` — タグ正規化・統合・ホスト名 allowlist
+  - `src/note.ts` — `renderNote` / ファイル名サニタイズ
+  - `src/url-index.ts` — URL 重複検知インデックス (読み書き)
+  - `src/notify.ts` — Webhook 通知
+  - `src/time.ts` — JST タイムスタンプ生成
+
+  新規ユーティリティは責務に応じて該当モジュールに追加すること。どの責務にも属さない場合は新モジュールを切り出す。
 - `wrangler.jsonc` — バインディング / vars。`bucket_name` は `REPLACE_WITH_YOUR_R2_BUCKET_NAME` のプレースホルダのままなので、デプロイ前に書き換えが必須。
 - `client/bookmarklet.js` — Chrome 用ブックマークレットの未 minify 版 (`WORKER_URL` / `SECRET` を書き換えて minify → ブックマーク URL に貼る)。
 - `client/ios-shortcut.md` — iOS ショートカット組み立て手順 (ショートカットファイル自体は配布不可)。
@@ -67,6 +82,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 機能追加は HANDOFF.md の方針通り、まず `docs/adr/` に ADR を書いてから着手（`docs/adr/0000-template.md` をコピーして使う）。
 - 動作確認の最短ループ:
+
   ```
   bun run dev
   curl -X POST http://127.0.0.1:8787/clip \
@@ -74,4 +90,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     -H "Content-Type: application/json" \
     -d '{"url":"https://example.com/article","tags":["test"]}'
   ```
+
 - iOS では Obsidian 起動時にしか Remotely Save が pull しない。「クリップ即時反映」は仕様外なので、即時性を担保する設計に倒さないこと。

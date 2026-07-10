@@ -23,31 +23,20 @@
  * 出力 (Markdown) はそのまま #5 にコメントすること (受け入れ条件 2)。
  */
 
+// プロンプト定数は src/prompts.ts を本番 Worker (src/llm.ts) と共有している (ADR 0009)。
+// 以前はここに手動コピーしていたが、本番側を変えたら必ず同期する運用負債があったため共有化した。
+import {
+  buildSummaryUserPrompt,
+  SUMMARY_MAX_TOKENS,
+  SUMMARY_SYSTEM_PROMPT,
+} from '../src/prompts'
+
 // process / Bun は bun ランタイムが提供する。@types/node を足さずに型だけ最小宣言する。
 declare const process: {
   env: Record<string, string | undefined>
   argv: string[]
   exit(code?: number): never
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// src/index.ts と同期必須 (挙動契約)。比較の忠実性のため意図的にコピーしている。
-// src/index.ts 側の SUMMARY_SYSTEM_PROMPT / SUMMARY_EXCERPT_LIMIT /
-// buildSummaryUserPrompt / max_tokens を変えたら、ここも必ず合わせること。
-const SUMMARY_SYSTEM_PROMPT =
-  'あなたは技術記事を日本語で要約するアシスタントです。' +
-  '出力は3〜5文の散文で、最初の1文に結論を置き、専門用語はそのまま残してください。' +
-  '箇条書きや見出しは使わないでください。'
-const SUMMARY_EXCERPT_LIMIT = 6000
-const SUMMARY_MAX_TOKENS = 300
-
-function buildSummaryUserPrompt(md: string, title: string | undefined): string {
-  const excerpt = md.slice(0, SUMMARY_EXCERPT_LIMIT)
-  return [title ? `タイトル: ${title}` : '', '本文:', excerpt]
-    .filter(Boolean)
-    .join('\n')
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 // 比較対象の候補モデル。先頭が現行既定。詳細は #5 のコメント参照。
 // ここに載せるのは「実際に /ai/run が通った」モデル ID のみ (Workers AI の
