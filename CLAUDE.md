@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 依存導入とローカル開発は bun 推奨 (README に明記)、`npm` でも可。
 
-- `bun install` — 依存導入
+- `bun install` — 依存導入。`prepare` スクリプトで `lefthook install` も自動実行され、pre-commit フックが有効化される。
 - `bun run dev` — `wrangler dev`。動作確認の最短ループは `wrangler dev` + curl POST。
 - `bun run typecheck` — `tsc --noEmit`。TypeScript strict を維持すること。
 - `bun run lint` — Biome による lint/format チェック（CI と同条件）。`bun run check` で lint+format+import sort の全チェック、`bun run format` で自動修正。
@@ -21,6 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   (HANDOFF にある要約モデル切替 TODO を実装するなら `ANTHROPIC_API_KEY` も同様に投入)
 
 テストは vitest + `@cloudflare/vitest-pool-workers` で導入済み（`src/index.test.ts`）。追加テストを書く場合は同ファイルを参照。
+
+**pre-commit フック** (`lefthook.yml`): staged ファイルに対して `biome check --write`（自動修正して再ステージ）と、staged に `*.ts` があれば `tsc --noEmit` を並列実行する。`bun install` 後に自動で有効化されるが、有効化されていない clone では `bunx lefthook install` を一度実行すること。CI 側の `bun run lint`（`biome ci .`、write なし）とは役割が異なる — ローカルは自動修正、CI は検証のみ。
 
 ## Architecture
 

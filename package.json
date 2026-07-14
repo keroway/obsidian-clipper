@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "lefthook install",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail",
@@ -21,6 +22,7 @@
     "@biomejs/biome": "^2.4.16",
     "@cloudflare/vitest-pool-workers": "^0.16.13",
     "@cloudflare/workers-types": "^4.20250109.0",
+    "lefthook": "^2.1.9",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
     "wrangler": "^4.0.0"
