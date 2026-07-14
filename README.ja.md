@@ -216,6 +216,12 @@ cd obsidian-clipper
 bun install            # または: npm install
 ```
 
+`bun install` は `prepare` スクリプトも実行し、staged ファイルに対して
+`biome check --write` と `tsc --noEmit` を走らせる
+[lefthook](https://github.com/evilmartians/lefthook) の pre-commit フックを
+インストールします。フックが有効化されていない場合(手動で `npm install`
+した場合など)は、`bunx lefthook install` を一度実行してください。
+
 ### 2. Cloudflare にログインする
 
 ```bash
@@ -496,8 +502,11 @@ Issue と Pull Request を歓迎します。
   `wrangler tail` のログを含めてください。
 - 機能提案は [`HANDOFF.md`](./HANDOFF.md) と既存 plan を確認してから
   起票してください。
-- コード変更では `bun run typecheck` を通してください。TypeScript strict、
-  Wrangler v4、Hono 4.x を維持します。
+- コード変更では `bun run typecheck` と `bun run check` を通してください。
+  TypeScript strict、Wrangler v4、Hono 4.x を維持します。lefthook の
+  pre-commit フック(`lefthook.yml`)が Biome と `tsc --noEmit` を自動実行
+  します。フックが有効化されていない clone では `bunx lefthook install` を
+  一度実行してください。
 
 ローカル開発の例:
 

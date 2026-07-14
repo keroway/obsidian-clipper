@@ -216,6 +216,12 @@ cd obsidian-clipper
 bun install            # or: npm install
 ```
 
+`bun install` also runs the `prepare` script, which installs a
+[lefthook](https://github.com/evilmartians/lefthook) pre-commit hook that runs
+`biome check --write` and `tsc --noEmit` on staged files. If the hook is not
+active (for example after a manual `npm install`), run `bunx lefthook install`
+once.
+
 ### 2. Log in to Cloudflare
 
 ```bash
@@ -501,8 +507,10 @@ Issues and pull requests are welcome.
   `wrangler tail` output with secrets redacted.
 - For feature requests, check [`HANDOFF.md`](./HANDOFF.md) and existing plans
   first.
-- For code changes, run `bun run typecheck`. Keep TypeScript strict mode,
-  Wrangler v4, and Hono 4.x.
+- For code changes, run `bun run typecheck` and `bun run check`. Keep
+  TypeScript strict mode, Wrangler v4, and Hono 4.x. A lefthook pre-commit
+  hook (`lefthook.yml`) runs Biome and `tsc --noEmit` automatically; run
+  `bunx lefthook install` once if the hook is not active in your clone.
 
 Local development loop:
 
