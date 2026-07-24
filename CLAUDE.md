@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 利用者向け手順は `README.md`、未実装 TODO とロードマップは `HANDOFF.md` にある。
 本ファイルは「読まないと分からない設計前提」と最低限の開発コマンドだけを置く。
 
+## ツールチェーン
+
+- **PM は bun**（keroway ワークスペースの標準は pnpm だが、このリポジトリは例外として bun を維持する）。
+  理由: Worker 単体の小規模リポで bun のスクリプト実行・install が最速なことに加え、
+  `bunfig.toml` の `minimumReleaseAge` によるサプライチェーン緩和が使えるため。
+- **`bunfig.toml` の `minimumReleaseAge = 604800` (7 日)**: 公開から 7 日未満の npm 版を
+  install / update 段階でブロックする。`bun update --latest` しても 7 日以内の最新版は
+  取得されない（これは仕様であってバグではない）。緊急 patch を取り込みたいときだけ
+  `minimumReleaseAgeExcludes` に個別追加する。CI の `bun install --frozen-lockfile` では
+  age gate は効かない（lockfile 固定なので不要）。
+- バージョンピン: `mise.toml` で bun をピン（node は不要）。タスクランナーは `justfile`
+  （package.json scripts への薄い委譲のみ。`just --list` 参照）。
+
 ## Commands
 
 依存導入とローカル開発は bun 推奨 (README に明記)、`npm` でも可。
@@ -21,6 +34,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   (HANDOFF にある要約モデル切替 TODO を実装するなら `ANTHROPIC_API_KEY` も同様に投入)
 
 テストは vitest + `@cloudflare/vitest-pool-workers` で導入済み（`src/index.test.ts`）。追加テストを書く場合は同ファイルを参照。
+
+**wrangler 設定の使い分け**: 本番 / dev 用は `wrangler.jsonc`、vitest 用は `wrangler.test.jsonc`（`vitest.config.ts` が `configPath` で参照）。メイン設定の `bucket_name` はプレースホルダのままなのでそのままではバリデーションに落ちるため、テスト用にダミーのバケット名・vars を差し替えた別ファイルにしている。R2 へは接続せず Miniflare がローカルでモックする。バインディングや vars を追加したら **両方の jsonc を更新**すること。
 
 **pre-commit フック** (`lefthook.yml`): staged ファイルに対して `biome check --write`（自動修正して再ステージ）と、staged に `*.ts` があれば `tsc --noEmit` を並列実行する。`bun install` 後に自動で有効化されるが、有効化されていない clone では `bunx lefthook install` を一度実行すること。CI 側の `bun run lint`（`biome ci .`、write なし）とは役割が異なる — ローカルは自動修正、CI は検証のみ。
 
@@ -94,3 +109,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ```
 
 - iOS では Obsidian 起動時にしか Remotely Save が pull しない。「クリップ即時反映」は仕様外なので、即時性を担保する設計に倒さないこと。
+- **WIP ブランチ**: `wip/non-url-clip` に「URL を持たないクリップ（手書きメモ等）を受け付ける」機能の作業途中コードが退避してある。non-URL clip に触れる作業を始める前にこのブランチの内容を確認し、重複実装を避けること。
