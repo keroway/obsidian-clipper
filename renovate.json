@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["before 9am on monday"],
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "chore",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Bun/npm の minor・patch は production/development で分けてグループ PR にまとめる（Workers のような小規模リポでは PR 数を抑える方が回しやすい）",
+      "matchManagers": ["bun", "npm"],
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "production-minor-patch"
+    },
+    {
+      "matchManagers": ["bun", "npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "development-minor-patch"
+    },
+    {
+      "description": "major は破壊的変更を含むので個別 PR のまま受ける",
+      "matchManagers": ["bun", "npm"],
+      "matchUpdateTypes": ["major"],
+      "groupName": null
+    },
+    {
+      "description": "GitHub Actions の SHA / バージョン更新もまとめて 1 PR に",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "github-actions"
+    },
+    {
+      "description": "bunfig.toml の minimumReleaseAge (7日) と揃え、公開7日未満のバージョンではPRを作らない",
+      "matchDatasources": ["npm"],
+      "minimumReleaseAge": "7 days"
+    }
+  ],
+  "prConcurrentLimit": 5,
+  "rangeStrategy": "bump"
+}

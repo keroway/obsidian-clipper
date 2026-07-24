@@ -468,7 +468,7 @@ install 時に age gate を使っています。
 その他の運用:
 
 - `bun.lock` をコミットし、CI では `bun install --frozen-lockfile` を使います。
-- 依存更新は [Dependabot](./.github/dependabot.yml) 経由で行います。
+- 依存更新は [Renovate](./renovate.json) 経由で行います。
 - より厳密にする場合は GitHub Actions の SHA pinning を検討してください。
 
 ## 既知の制約

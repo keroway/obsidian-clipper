@@ -1,7 +1,7 @@
 name: typecheck
 
 # main への push と PR で TypeScript の型チェックを走らせる。
-# Dependabot PR のチェック土台にもなる。
+# Renovate PR のチェック土台にもなる。
 on:
   push:
     branches: [main]
