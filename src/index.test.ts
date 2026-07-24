@@ -9,7 +9,9 @@
 
 import { env, SELF } from 'cloudflare:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { extForMime } from './attachment'
 import type { Bindings } from './bindings'
+import { classifyJsonBody, detectContentKind } from './clip-input'
 import { fetchArticle } from './fetch-article'
 import { renderNote, sanitizeForFilename } from './note'
 import {
@@ -20,7 +22,12 @@ import {
   resolveHostTagRules,
 } from './tags'
 import { normalizeUrl } from './url'
-import { readUrlIndex, sha1Hex, writeUrlIndexCAS } from './url-index'
+import {
+  readUrlIndex,
+  sha1Hex,
+  sha1HexBytes,
+  writeUrlIndexCAS,
+} from './url-index'
 
 // ─────────────────────────── normalizeUrl ───────────────────────────
 
@@ -257,6 +264,30 @@ describe('renderNote', () => {
     expect(note).toContain('## 抜粋')
     expect(note).toContain('Selected text')
   })
+
+  // ADR 0011: source / url の後方互換拡張
+  it('defaults to source: web-clip when source is not specified (regression)', () => {
+    const note = renderNote(baseOpts)
+    expect(note).toContain('source: web-clip')
+  })
+
+  it('uses the given source value instead of web-clip', () => {
+    const note = renderNote({ ...baseOpts, source: 'text-clip' })
+    expect(note).toContain('source: text-clip')
+    expect(note).not.toContain('source: web-clip')
+  })
+
+  it('omits source_url and <url> when url is not provided', () => {
+    const note = renderNote({
+      source: 'text-clip',
+      title: 'A note',
+      body: 'body text',
+      createdIso: '2026-06-13T12:00:00+09:00',
+      tags: ['clipped'],
+    })
+    expect(note).not.toContain('source_url:')
+    expect(note).not.toContain('<undefined>')
+  })
 })
 
 // ─────────────────────────── sha1Hex ───────────────────────────
@@ -278,6 +309,108 @@ describe('sha1Hex', () => {
     const h1 = await sha1Hex('https://example.com/a')
     const h2 = await sha1Hex('https://example.com/b')
     expect(h1).not.toBe(h2)
+  })
+})
+
+describe('sha1HexBytes', () => {
+  it('returns 40-char lowercase hex string', async () => {
+    const h = await sha1HexBytes(new TextEncoder().encode('hello'))
+    expect(h).toHaveLength(40)
+    expect(h).toMatch(/^[0-9a-f]+$/)
+  })
+
+  it('is deterministic for the same bytes', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4])
+    const h1 = await sha1HexBytes(bytes)
+    const h2 = await sha1HexBytes(bytes)
+    expect(h1).toBe(h2)
+  })
+
+  it('differs for different bytes', async () => {
+    const h1 = await sha1HexBytes(new Uint8Array([1, 2, 3]))
+    const h2 = await sha1HexBytes(new Uint8Array([4, 5, 6]))
+    expect(h1).not.toBe(h2)
+  })
+
+  it('agrees with sha1Hex for the equivalent text', async () => {
+    const h1 = await sha1Hex('agreement-check')
+    const h2 = await sha1HexBytes(new TextEncoder().encode('agreement-check'))
+    expect(h1).toBe(h2)
+  })
+})
+
+// ─────────────────────────── clip-input ───────────────────────────
+
+describe('detectContentKind', () => {
+  it('detects multipart/form-data (with boundary param)', () => {
+    expect(
+      detectContentKind('multipart/form-data; boundary=----WebKitFormBoundary'),
+    ).toBe('multipart')
+  })
+
+  it('treats application/json as json', () => {
+    expect(detectContentKind('application/json')).toBe('json')
+  })
+
+  it('treats missing content-type as json', () => {
+    expect(detectContentKind(undefined)).toBe('json')
+  })
+})
+
+describe('classifyJsonBody', () => {
+  it('classifies as url when url is a non-empty string', () => {
+    const result = classifyJsonBody({ url: 'https://example.com/a' })
+    expect(result?.kind).toBe('url')
+  })
+
+  it('classifies as text when markdown is provided without url', () => {
+    const result = classifyJsonBody({ markdown: '# hi' })
+    expect(result?.kind).toBe('text')
+  })
+
+  it('classifies as text when text is provided without url', () => {
+    const result = classifyJsonBody({ text: 'plain note' })
+    expect(result?.kind).toBe('text')
+  })
+
+  it('prefers url over markdown/text when both are present', () => {
+    const result = classifyJsonBody({
+      url: 'https://example.com/a',
+      markdown: '# hi',
+    })
+    expect(result?.kind).toBe('url')
+  })
+
+  it('returns null when neither url nor markdown/text is present', () => {
+    expect(classifyJsonBody({ title: 'no content' })).toBeNull()
+  })
+
+  it('returns null for non-object bodies', () => {
+    expect(classifyJsonBody(null)).toBeNull()
+    expect(classifyJsonBody('string')).toBeNull()
+  })
+})
+
+// ─────────────────────────── attachment ───────────────────────────
+
+describe('extForMime', () => {
+  it('maps known image MIME types to extensions', () => {
+    expect(extForMime('image/png')).toBe('png')
+    expect(extForMime('image/jpeg')).toBe('jpg')
+    expect(extForMime('image/gif')).toBe('gif')
+    expect(extForMime('image/webp')).toBe('webp')
+  })
+
+  it('falls back to filename extension when MIME is empty', () => {
+    expect(extForMime('', 'photo.png')).toBe('png')
+  })
+
+  it('returns null for unsupported MIME and no usable filename', () => {
+    expect(extForMime('application/pdf')).toBeNull()
+  })
+
+  it('returns null for svg (excluded in v1)', () => {
+    expect(extForMime('image/svg+xml')).toBeNull()
   })
 })
 
@@ -942,5 +1075,191 @@ describe('POST /clip - auto tagging', () => {
         : content.indexOf('---', 4),
     )
     expect(fmTags).not.toContain('- "zenn"')
+  })
+})
+
+// ─────────── Integration: text/markdown clip (ADR 0011) ───────────
+
+describe('POST /clip - text/markdown clip', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const postJson = (body: unknown) =>
+    SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+  it('saves a markdown body under Inbox/ with source: text-clip', async () => {
+    const res = await postJson({
+      markdown: '# Hello\n\nSome body content.',
+      tags: ['test'],
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { ok: boolean; path: string }
+    expect(json.ok).toBe(true)
+    expect(json.path).toMatch(/Inbox\/.*\.md$/)
+
+    const stored = await env.VAULT.get(json.path)
+    expect(stored).not.toBeNull()
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('source: text-clip')
+    expect(content).not.toContain('source_url:')
+    expect(content).toContain('Some body content.')
+    expect(content).toContain('- "clipped"')
+    expect(content).toContain('- "test"')
+  })
+
+  it('saves a plaintext body via the text field', async () => {
+    const res = await postJson({ text: 'just a plain note', note: 'memo' })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { ok: boolean; path: string }
+    expect(json.ok).toBe(true)
+
+    const stored = await env.VAULT.get(json.path)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('source: text-clip')
+    expect(content).toContain('just a plain note')
+    expect(content).toContain('memo')
+  })
+
+  it('returns 400 when neither url nor markdown/text is present', async () => {
+    const res = await postJson({ title: 'nothing useful' })
+    expect(res.status).toBe(400)
+  })
+})
+
+// ─────────── Integration: image clip (multipart/form-data, ADR 0011) ───────────
+
+describe('POST /clip - image clip', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const pngBytes = (seed: number) =>
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, seed, seed + 1, seed + 2])
+
+  const postImage = (
+    fields: Record<string, string> = {},
+    filename = 'shot.png',
+    bytes = pngBytes(1),
+  ) => {
+    const form = new FormData()
+    form.set('image', new File([bytes], filename, { type: 'image/png' }))
+    for (const [k, v] of Object.entries(fields)) form.set(k, v)
+    return SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.SHARED_SECRET}` },
+      body: form,
+    })
+  }
+
+  it('saves an image under Attachments/ without an embed note by default', async () => {
+    const res = await postImage({}, 'unique-shot-1.png', pngBytes(10))
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as {
+      ok: boolean
+      path: string
+      embedded: boolean
+      bytes: number
+    }
+    expect(json.ok).toBe(true)
+    expect(json.path).toMatch(/Attachments\/.*\.png$/)
+    expect(json.embedded).toBe(false)
+
+    const stored = await env.VAULT.get(json.path)
+    expect(stored).not.toBeNull()
+    expect(stored?.httpMetadata?.contentType).toBe('image/png')
+  })
+
+  it('generates an embed note under Inbox/ when embed=1 is set', async () => {
+    const res = await postImage(
+      { embed: '1', title: 'My Screenshot' },
+      'unique-shot-2.png',
+      pngBytes(20),
+    )
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as {
+      ok: boolean
+      embedded: boolean
+      notePath?: string
+    }
+    expect(json.ok).toBe(true)
+    expect(json.embedded).toBe(true)
+    expect(json.notePath).toMatch(/Inbox\/.*\.md$/)
+
+    const stored = await env.VAULT.get(json.notePath as string)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('source: image-clip')
+    expect(content).toContain('![[Attachments/')
+    expect(content).toContain('My Screenshot')
+  })
+
+  it('returns 415 for unsupported image types', async () => {
+    const form = new FormData()
+    form.set(
+      'image',
+      new File([new Uint8Array([1, 2, 3])], 'doc.pdf', {
+        type: 'application/pdf',
+      }),
+    )
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.SHARED_SECRET}` },
+      body: form,
+    })
+    expect(res.status).toBe(415)
+  })
+
+  it('returns 400 when no image field is present', async () => {
+    const form = new FormData()
+    form.set('title', 'no image here')
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.SHARED_SECRET}` },
+      body: form,
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns duplicate:true when the same image bytes are posted twice', async () => {
+    const bytes = pngBytes(99)
+    const res1 = await postImage({}, 'dup-shot-1.png', bytes)
+    expect(res1.status).toBe(200)
+    const json1 = (await res1.json()) as { ok: boolean; path: string }
+    expect(json1.ok).toBe(true)
+
+    // Different filename, same bytes → same content hash.
+    const res2 = await postImage({}, 'dup-shot-2.png', bytes)
+    expect(res2.status).toBe(200)
+    const json2 = (await res2.json()) as {
+      ok: boolean
+      duplicate: boolean
+      path: string
+    }
+    expect(json2.ok).toBe(false)
+    expect(json2.duplicate).toBe(true)
+    expect(json2.path).toBe(json1.path)
+  })
+
+  it('returns 401 when Authorization header is missing (multipart too)', async () => {
+    const form = new FormData()
+    form.set(
+      'image',
+      new File([pngBytes(1)], 'shot.png', { type: 'image/png' }),
+    )
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      body: form,
+    })
+    expect(res.status).toBe(401)
   })
 })

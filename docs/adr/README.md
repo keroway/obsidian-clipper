@@ -18,3 +18,6 @@
 | [0006](0006-failure-notification.md) | 失敗通知 (Webhook) | Accepted |
 | [0007](0007-fetch-robustness.md) | 本文取得の堅牢化 (Jina フォールバック) | Accepted |
 | [0008](0008-auto-tagging.md) | タグ自動付与 | Accepted |
+| [0009](0009-module-split.md) | プロンプト共有モジュール化とコアの責務分割 | Accepted |
+| [0010](0010-url-index-robustness.md) | URL インデックスの整合性強化と重複判定の仕様変更 | Accepted |
+| [0011](0011-non-url-clip.md) | URL 以外の入力 (Markdown / テキスト / 画像) の受け入れ | Accepted |

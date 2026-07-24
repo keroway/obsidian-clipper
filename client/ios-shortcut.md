@@ -65,3 +65,41 @@ X アプリで投稿を開く → 共有アイコン → 「Save to Obsidian」�
   失敗時は `クリップボードにコピー` で URL を退避させると後追いしやすい。
 - Apple Watch から URL を投げたいなら、上記ショートカットの「Apple Watch に表示」を ON に。
 - Mac の Safari 共有シートにも同じショートカットが出るので、PC 側のサブ動線にもなる。
+
+## 5. 応用: テキスト/Markdown クリップ (ADR 0011)
+
+URL を持たないメモや他アプリのテキスト共有を保存したい場合は、別のショートカット
+「Save Text to Obsidian」を同様に作る。受け入れるタイプで **テキスト** を ON にし、
+辞書のキーを `url` の代わりに `text`（プレーンテキスト）または `markdown`
+（他アプリの Markdown 共有時）にする:
+
+| キー      | 種別     | 値                        |
+|-----------|----------|---------------------------|
+| text      | テキスト | 共有されたテキスト        |
+| note      | テキスト | 追加メモ (任意)           |
+
+`(4) URL の内容を取得` の設定は URL クリップと同じ (`POST` / `JSON` / 同じ Worker URL /
+同じ `Authorization` ヘッダ)。`url` キーを入れないことで Worker 側がテキストクリップと
+判定し、`source: text-clip` の frontmatter 付きノートとして `Inbox/` に保存する。
+
+## 6. 応用: 画像クリップ (ADR 0011)
+
+写真アプリやスクリーンショットの共有シートから画像を送りたい場合は、辞書ではなく
+`URL の内容を取得` の要求の本文を **フォーム** に切り替えて画像添付する:
+
+- 受け入れるタイプ: **画像** を ON にする
+- `(4) URL の内容を取得`:
+    - URL     : `https://obsidian-clipper.<your-subdomain>.workers.dev/clip`
+    - 方法    : `POST`
+    - 要求の本文: `フォーム`
+    - フィールド:
+        - `image` = ファイル = ショートカットの入力 (画像)
+        - `title` = テキスト (任意)
+        - `note`  = テキスト (任意)
+        - `embed` = テキスト = `1` (Attachments に保存した画像を `![[...]]` で
+          埋め込んだノートも `Inbox/` に同時生成したい場合のみ。省略時は画像のみ保存)
+    - ヘッダ: `Authorization` = `Bearer <SHARED_SECRET>` (`Content-Type` はフォーム
+      送信時にショートカットが自動設定するので手動指定しない)
+
+Worker は画像を `Attachments/` に保存し、レスポンスの `path`(画像) と
+`embedded`/`notePath`(embed=1 時のみ) を返す。

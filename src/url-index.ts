@@ -1,12 +1,18 @@
 export type IndexEntry = { path: string; createdAt: string }
 export type UrlIndex = Record<string, IndexEntry>
 
-export async function sha1Hex(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text)
+// バイト列の SHA-1 hex ダイジェスト。画像等バイナリの content hash 重複検知に使う (ADR 0011)。
+export async function sha1HexBytes(
+  data: ArrayBuffer | Uint8Array,
+): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-1', data)
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
+}
+
+export async function sha1Hex(text: string): Promise<string> {
+  return sha1HexBytes(new TextEncoder().encode(text))
 }
 
 type ReadResult = { index: UrlIndex; etag?: string }

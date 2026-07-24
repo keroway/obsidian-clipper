@@ -34,6 +34,10 @@
     "VAULT_PREFIX": "",
     // 保存先サブフォルダ。Vault ルートからの相対パス
     "INBOX_FOLDER": "Inbox",
+    // 画像添付の保存先サブフォルダ。Vault ルートからの相対パス (ADR 0011)
+    "ATTACHMENTS_FOLDER": "Attachments",
+    // 画像添付の最大バイト数。既定 10MiB (ADR 0011)
+    "MAX_IMAGE_BYTES": "10485760",
     // 要約を有効化するか
     "ENABLE_SUMMARY": "true",
     // 手動タグが 0 件のとき本文から LLM タグを生成するか。"true" で有効化。
