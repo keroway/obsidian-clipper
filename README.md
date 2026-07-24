@@ -473,7 +473,7 @@ malicious package versions.
 Other practices:
 
 - Commit `bun.lock` and use `bun install --frozen-lockfile` in CI.
-- Update dependencies through [Dependabot](./.github/dependabot.yml).
+- Update dependencies through [Renovate](./renovate.json).
 - Consider pinning GitHub Actions by SHA for stricter supply-chain control.
 
 ## Known limitations
