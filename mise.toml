@@ -1,0 +1,4 @@
+# keroway 標準 mise 設定（bun リポジトリ版）。
+# このリポジトリは bun 採用のため node / pnpm はピンしない。
+[tools]
+bun = "1.3"
