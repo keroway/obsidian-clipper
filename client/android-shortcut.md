@@ -108,3 +108,52 @@ Chrome やニュースアプリで記事を開く → 共有 → `HTTP Shortcuts
     -H "Content-Type: application/json" \
     -d '{"url":"https://example.com/article","tags":["android"]}'
   ```
+
+## 6. 応用: テキスト/Markdown クリップ (ADR 0011)
+
+URL を持たないメモや他アプリのテキスト共有を保存したい場合は、別のショートカット
+「Save Text to Obsidian」を同様に作る。
+
+1. **共有受け取り用の変数を追加**: 手順 2 と同様に Static Variable を作成し、
+   名前は `shared_text`、**Allow Receiving Value from Share Dialog** を ON、
+   **Data to Receive from Sharing** は **Text only** のまま。
+2. **Basic Request Settings**: Method `POST`、URL は同じ Worker URL。
+3. **Request Headers**: `Authorization` / `Content-Type: application/json` は
+   URL クリップと同じ。
+4. **Request Body** (Custom Text) — **`url` キーは入れない**こと
+   (入れると URL クリップとして扱われる):
+   ```json
+   {"text":"{{shared_text}}","tags":["android"]}
+   ```
+   他アプリの Markdown 共有を保存したい場合はキー名を `markdown` にする。
+
+Worker は `url` が無く `text`/`markdown` があるボディをテキストクリップと判定し、
+`source: text-clip` frontmatter 付きノートとして `Inbox/` に保存する
+(要約・自動タグ・重複検知の対象外)。
+
+## 7. 応用: 画像クリップ (ADR 0011)
+
+写真アプリやスクリーンショットの共有シートから画像を送りたい場合は、
+JSON ではなく **multipart/form-data** で送る別のショートカット
+「Save Image to Obsidian」を作る。
+
+1. **共有受け取り用の変数**: Static Variable を作成し、名前は `shared_image`、
+   **Allow Receiving Value from Share Dialog** を ON、
+   **Data to Receive from Sharing** は **Files (ファイル)** を選ぶ。
+2. **Basic Request Settings**: Method `POST`、URL は同じ Worker URL。
+3. **Request Headers**: `Authorization: Bearer <SHARED_SECRET>` のみ追加する。
+   **`Content-Type` は手動で設定しない**こと
+   (multipart 送信時に境界文字列込みでアプリが自動設定するため)。
+4. **Request Body Type**: **File / Multipart (ファイル/マルチパート)** を選び、
+   以下のパートを追加する:
+
+   | パート名 | 種別 | 値 |
+   |----------|------|-----|
+   | `image`  | ファイル | 変数 `shared_image` |
+   | `title`  | テキスト | (任意) |
+   | `note`   | テキスト | (任意) |
+   | `embed`  | テキスト | `1` (画像を埋め込んだノートも `Inbox/` に生成したい場合のみ。省略時は画像のみ保存) |
+
+対応形式は PNG/JPEG/GIF/WEBP のみ (`415` で拒否される形式あり)。上限は
+`MAX_IMAGE_BYTES` (既定 10 MiB、超過は `413`)。画像は `Attachments/` に保存され、
+`embed=1` のときだけ `![[...]]` で埋め込んだ companion ノートが `Inbox/` にも作られる。

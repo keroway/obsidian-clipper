@@ -44,6 +44,7 @@ Worker はショートカット、ブックマークレット、スクリプト�
 ## 特徴
 
 - iOS ショートカット、Android HTTP Shortcuts、ブラウザのブックマークレット、`curl`、自作スクリプトから `POST /clip` で保存できます。
+- 同じ `POST /clip` エンドポイントで、プレーンテキスト/Markdown のメモ (JSON ボディ) や画像 (`multipart/form-data`) もクリップできます (ADR 0011)。
 - `created`、`updated`、`source`、`source_url`、`source_title`、`tags`、`summary` を含む Dataview 向けの frontmatter 付き Markdown を保存します。
 - 既定では Workers AI、設定時は Anthropic Claude Haiku 4.5 で要約できます。Anthropic 経路が失敗した場合は Workers AI に 1 回フォールバックします。
 - ホスト名 allowlist からタグを付与できます。手動タグがない場合に限り、本文から最大 3 個の LLM タグを生成する設定もあります。
@@ -319,15 +320,17 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 ### `POST /clip`
 
 書き込み用の唯一のエンドポイントです。`GET /` は簡単な使い方テキストを返します。
+Worker は `Content-Type` とボディの内容によって 3 種類の入力 (ADR 0011) を
+振り分けます: URL クリップ、テキスト/Markdown クリップ、画像クリップ。
 
 #### リクエストヘッダ
 
 | ヘッダ | 必須 | 値 |
 | --- | --- | --- |
 | `Authorization` | はい | `Bearer <SHARED_SECRET>` |
-| `Content-Type` | はい | `application/json` |
+| `Content-Type` | はい | `application/json` (URL / テキストクリップ) または `multipart/form-data` (画像クリップ) |
 
-#### リクエストボディ
+#### URL クリップ (`Content-Type: application/json`、`url` あり)
 
 | フィールド | 型 | 必須 | 説明 |
 | --- | --- | --- | --- |
@@ -337,16 +340,47 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 | `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます。 |
 | `tags` | `string[]` | いいえ | 追加タグ。`clipped`、allowlist タグ、任意の LLM タグと統合されます。 |
 
+`source: web-clip` frontmatter で `INBOX_FOLDER` 配下に保存されます。
+
+#### テキスト/Markdown クリップ (`Content-Type: application/json`、`url` なし)
+
+| フィールド | 型 | 必須 | 説明 |
+| --- | --- | --- | --- |
+| `markdown` | `string` | `markdown`/`text` のいずれか | Markdown 本文。`## 本文` 配下にそのまま埋め込まれます。 |
+| `text` | `string` | `markdown`/`text` のいずれか | プレーンテキスト本文 (`markdown` が無い場合に使用)。 |
+| `title` | `string` | いいえ | 明示的なタイトル。未指定時は本文の最初の非空行、次に note にフォールバックします。 |
+| `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます。 |
+| `tags` | `string[]` | いいえ | 追加タグ。`clipped` と統合されます (URL/本文取得を行わないため、ホスト名/LLM タグは付きません)。 |
+
+`source: text-clip` frontmatter (`source_url` なし) で `INBOX_FOLDER` 配下に保存されます。
+要約・自動タグ・URL ベースの重複検知は行われません。
+
+#### 画像クリップ (`Content-Type: multipart/form-data`)
+
+| フィールド | 型 | 必須 | 説明 |
+| --- | --- | --- | --- |
+| `image` | File | はい | 画像ファイル。許可される形式: PNG、JPEG、GIF、WEBP (`MAX_IMAGE_BYTES`、既定 10 MiB まで)。 |
+| `title` | テキストフィールド | いいえ | 埋め込みノート (任意) 用のタイトル。 |
+| `note` | テキストフィールド | いいえ | 埋め込みノート (任意) 用のメモ。 |
+| `tags` | テキストフィールド | いいえ | 埋め込みノート (任意) 用のカンマ区切りタグ。 |
+| `embed` | テキストフィールド | いいえ | `1` を指定 (または `title`/`note`/`tags` のいずれかを指定) すると、画像を `![[...]]` で埋め込んだノートも `INBOX_FOLDER` に生成します。既定では省略され、画像のみ保存されます。 |
+
+画像はバイナリのまま `ATTACHMENTS_FOLDER` (既定 `Attachments`) 配下に保存されます。
+重複検知は画像バイト列の SHA-1 ハッシュに基づき、URL クリップと同じインデックスを
+使い回します。`?refresh=1` を付けると無視できます。
+
 #### レスポンス
 
 | ステータス | 内容 |
 | --- | --- |
 | `200` | 成功 JSON または重複 JSON |
-| `400` | `{ ok: false, error: 'invalid JSON body' \| 'url is required' \| 'invalid url' }` |
+| `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
+| `413` | `{ ok: false, error: 'image too large' }` |
+| `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 
-Jina Reader や要約の失敗はエラーステータスにしません。Worker は失敗内容をノートまたはログに残し、クリップを保存します。
+Jina Reader や要約の失敗は、URL クリップにおいてもエラーステータスにしません。Worker は失敗内容をノートまたはログに残し、クリップを保存します。
 
 ## 設定リファレンス
 
@@ -356,6 +390,8 @@ Jina Reader や要約の失敗はエラーステータスにしません。Worke
 | --- | --- | --- |
 | `VAULT_PREFIX` | `""` | R2 上の Vault prefix。空文字または `/` 終端である必要があります。 |
 | `INBOX_FOLDER` | `"Inbox"` | Vault ルートからの保存先フォルダ。 |
+| `ATTACHMENTS_FOLDER` | `"Attachments"` | 画像クリップの保存先フォルダ。Vault ルートからの相対パス (ADR 0011)。 |
+| `MAX_IMAGE_BYTES` | `"10485760"` | 画像クリップで許可する最大バイト数 (ADR 0011)。 |
 | `ENABLE_SUMMARY` | `"true"` | 要約を有効にします。 |
 | `ENABLE_AUTO_TAGS` | `"false"` | 手動タグがない場合に LLM タグを生成します。旧名 `ENABLE_AUTO_TAG` も受け付けます。 |
 | `AUTO_TAGS_ALLOWLIST` | `""` | 追加の固定ホスト名タグ。例: `zenn.dev:zenn,github.com:github`。 |
@@ -482,6 +518,12 @@ install 時に age gate を使っています。
 - Remotely Save の暗号化は無効にする必要があります。
 - タイムスタンプは JST (`+09:00`) 固定です。他のタイムゾーンにしたい
   場合は `src/index.ts` の `jstStamp` と `jstIso` を変更してください。
+- テキスト/Markdown クリップには要約・自動タグ・重複検知がありません
+  (ADR 0011)。本文に自前の frontmatter が含まれる Markdown を送ると、
+  そのまま `## 本文` 配下に埋め込まれ、生成される frontmatter とは
+  マージされません。
+- 画像クリップは PNG/JPEG/GIF/WEBP のみ受け付けます。SVG やその他の
+  ファイル形式 (PDF を含む) は `415` で拒否されます (ADR 0011)。
 
 ## ロードマップ
 
