@@ -17,8 +17,9 @@ export function extForMime(mime: string, filename?: string): string | null {
   if (normalized && IMAGE_EXT[normalized]) return IMAGE_EXT[normalized]
   const m = filename?.match(EXT_BY_FILENAME_RE)
   const fromName = m?.[1]?.toLowerCase()
+  if (fromName === 'jpeg') return 'jpg'
   if (fromName && Object.values(IMAGE_EXT).includes(fromName)) {
-    return fromName === 'jpeg' ? 'jpg' : fromName
+    return fromName
   }
   return null
 }

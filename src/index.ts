@@ -248,7 +248,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 // ---- テキスト/Markdown クリップ (ADR 0011) ----
 // URL が無いため要約・自動タグ・ホストタグ・URL 重複検知の対象外。
 async function handleTextClip(c: AppContext, payload: TextClipBody) {
-  const bodyText = payload.markdown ?? payload.text ?? ''
+  const bodyText = payload.markdown || payload.text || ''
 
   const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
   const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
@@ -263,7 +263,8 @@ async function handleTextClip(c: AppContext, payload: TextClipBody) {
     sanitizeForFilename(
       payload.title || firstLine || payload.note || 'note',
     ).slice(0, 60) || 'note'
-  const filename = `${stamp}_${slug}.md`
+  const uniq = crypto.randomUUID().slice(0, 8)
+  const filename = `${stamp}_${slug}_${uniq}.md`
   const key = `${prefix}${folder}/${filename}`
 
   const body = renderNote({
@@ -339,7 +340,8 @@ async function handleImageClip(c: AppContext) {
   const stamp = jstStamp(now)
   const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
   const slug = sanitizeForFilename(origName).slice(0, 60) || 'image'
-  const filename = `${stamp}_${slug}.${ext}`
+  const uniq = crypto.randomUUID().slice(0, 8)
+  const filename = `${stamp}_${slug}_${uniq}.${ext}`
   const key = `${prefix}${attachmentsFolder}/${filename}`
 
   await c.env.VAULT.put(key, buf, {
