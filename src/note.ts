@@ -15,13 +15,14 @@ function yamlEscape(s: string): string {
 }
 
 export function renderNote(opts: {
-  url: string
+  url?: string
+  source?: string
   title?: string
-  summary: string
+  summary?: string
   note?: string
   selection?: string
   tags?: string[]
-  body: string
+  body?: string
   createdIso: string
   fetchErr?: string
 }): string {
@@ -29,8 +30,8 @@ export function renderNote(opts: {
   const fm: string[] = ['---']
   fm.push(`created: ${opts.createdIso}`)
   fm.push(`updated: ${opts.createdIso}`)
-  fm.push('source: web-clip')
-  fm.push(`source_url: ${yamlEscape(opts.url)}`)
+  fm.push(`source: ${opts.source ?? 'web-clip'}`)
+  if (opts.url) fm.push(`source_url: ${yamlEscape(opts.url)}`)
   if (opts.title) fm.push(`source_title: ${yamlEscape(opts.title)}`)
   // タグの正規化・重複排除・clipped 前置は呼び出し側 (mergeTags) の責務。
   // ここでは渡された値をそのまま描画する。
@@ -45,7 +46,7 @@ export function renderNote(opts: {
   // ---- body ----
   const parts: string[] = [fm.join('\n'), '']
   if (opts.title) parts.push(`# ${opts.title}`, '')
-  parts.push(`<${opts.url}>`, '')
+  if (opts.url) parts.push(`<${opts.url}>`, '')
 
   if (opts.note) {
     parts.push('> [!note] メモ')

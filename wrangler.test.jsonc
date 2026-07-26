@@ -18,6 +18,8 @@
   "vars": {
     "VAULT_PREFIX": "",
     "INBOX_FOLDER": "Inbox",
+    "ATTACHMENTS_FOLDER": "Attachments",
+    "MAX_IMAGE_BYTES": "10485760",
     "ENABLE_SUMMARY": "false",
     "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
     "SUMMARY_PROVIDER": "workers-ai",

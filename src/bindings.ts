@@ -6,6 +6,10 @@ export type Bindings = {
   SHARED_SECRET: string
   VAULT_PREFIX: string
   INBOX_FOLDER: string
+  // 画像添付の保存先フォルダ (既定 'Attachments')。ADR 0011。
+  ATTACHMENTS_FOLDER?: string
+  // 画像添付の最大バイト数 (既定 10MiB)。ADR 0011。
+  MAX_IMAGE_BYTES?: string
   ENABLE_SUMMARY: string
   SUMMARY_MODEL: string
   ENABLE_AUTO_TAGS?: string

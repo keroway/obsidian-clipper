@@ -9,6 +9,16 @@
  * 動作:
  *   現在ページの URL / タイトル / 選択範囲を Worker に POST する。
  *   成功すると右下に通知を出して 2 秒で消える。
+ *
+ * 参考 (ADR 0011): Worker の POST /clip は URL 以外の入力も受け付ける。
+ *   - テキスト/Markdown クリップ (Content-Type: application/json):
+ *       { "markdown"?: string, "text"?: string, "title"?: string, "note"?: string, "tags"?: string[] }
+ *       (markdown か text のいずれかが必須。url は付けない)
+ *   - 画像クリップ (Content-Type: multipart/form-data):
+ *       フィールド image=<file> (必須), title? / note? / tags?(カンマ区切り) / embed?("1" で
+ *       Attachments 内の画像を埋め込んだノートも同時生成)。
+ *   このブックマークレットはページの URL クリップ専用なので上記は実装していないが、
+ *   別途 curl やショートカットから同じ Worker に投げられる。
  */
 (() => {
   const WORKER_URL = 'https://obsidian-clipper.<your-subdomain>.workers.dev/clip';

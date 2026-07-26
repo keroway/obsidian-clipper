@@ -44,6 +44,7 @@ The Worker accepts a URL from a shortcut, bookmarklet, or script; normalizes the
 ## Features
 
 - Save pages through `POST /clip` from iOS Shortcuts, Android HTTP Shortcuts, a browser bookmarklet, `curl`, or your own script.
+- Also clip plain text/Markdown notes (JSON body) and images (`multipart/form-data`) through the same `POST /clip` endpoint (ADR 0011).
 - Store notes as Markdown with Dataview-friendly frontmatter: `created`, `updated`, `source`, `source_url`, `source_title`, `tags`, and `summary`.
 - Generate optional summaries with Workers AI by default, or Anthropic Claude Haiku 4.5 when configured. If Anthropic fails, the Worker falls back to Workers AI once.
 - Add tags from a hostname allowlist, and optionally generate up to three LLM-based tags when no manual tags are provided.
@@ -318,16 +319,18 @@ After the next Remotely Save sync, the note should appear in `Inbox/`.
 
 ### `POST /clip`
 
-This is the only write endpoint. `GET /` returns short usage text.
+This is the only write endpoint. `GET /` returns short usage text. The Worker
+branches on `Content-Type` and body content to accept three kinds of input
+(ADR 0011): URL clips, text/Markdown clips, and image clips.
 
 #### Request headers
 
 | Header | Required | Value |
 | --- | --- | --- |
 | `Authorization` | Yes | `Bearer <SHARED_SECRET>` |
-| `Content-Type` | Yes | `application/json` |
+| `Content-Type` | Yes | `application/json` (URL / text clips) or `multipart/form-data` (image clips) |
 
-#### Request body
+#### URL clip (`Content-Type: application/json`, `url` present)
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -337,16 +340,44 @@ This is the only write endpoint. `GET /` returns short usage text.
 | `note` | `string` | No | User note. Saved as a `> [!note]` callout. |
 | `tags` | `string[]` | No | Additional tags merged with `clipped`, allowlist tags, and optional LLM tags. |
 
+Saved with `source: web-clip` frontmatter, under `INBOX_FOLDER`.
+
+#### Text/Markdown clip (`Content-Type: application/json`, `url` absent)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `markdown` | `string` | One of `markdown`/`text` | Markdown body, embedded as-is under `## 本文`. |
+| `text` | `string` | One of `markdown`/`text` | Plain text body (used when `markdown` is absent). |
+| `title` | `string` | No | Explicit title. Falls back to the first non-empty line, then the note. |
+| `note` | `string` | No | User note. Saved as a `> [!note]` callout. |
+| `tags` | `string[]` | No | Additional tags merged with `clipped`. No host/LLM tags (no URL/article fetch). |
+
+Saved with `source: text-clip` frontmatter (no `source_url`), under `INBOX_FOLDER`. No summarization, auto-tagging, or URL-based duplicate detection.
+
+#### Image clip (`Content-Type: multipart/form-data`)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `image` | File | Yes | Image file. Allowed types: PNG, JPEG, GIF, WEBP (up to `MAX_IMAGE_BYTES`, default 10 MiB). |
+| `title` | text field | No | Title for the optional embed note. |
+| `note` | text field | No | Note for the optional embed note. |
+| `tags` | text field | No | Comma-separated tags for the optional embed note. |
+| `embed` | text field | No | Set to `1` (or supply `title`/`note`/`tags`) to also generate a companion note in `INBOX_FOLDER` embedding the image with `![[...]]`. Omitted by default — only the image is saved. |
+
+The image is saved as binary content under `ATTACHMENTS_FOLDER` (default `Attachments`). Duplicate detection is based on the SHA-1 hash of the image bytes, reusing the same index as URL clips; add `?refresh=1` to bypass it.
+
 #### Response
 
 | Status | Body |
 | --- | --- |
 | `200` | Success JSON or duplicate JSON |
-| `400` | `{ ok: false, error: 'invalid JSON body' \| 'url is required' \| 'invalid url' }` |
+| `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
+| `413` | `{ ok: false, error: 'image too large' }` |
+| `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 
-Jina Reader and summary failures do not change the response to an error status. The Worker records the failure in the note or logs it, then saves the clip.
+Jina Reader and summary failures do not change the response to an error status for URL clips. The Worker records the failure in the note or logs it, then saves the clip.
 
 ## Configuration reference
 
@@ -356,6 +387,8 @@ Jina Reader and summary failures do not change the response to an error status. 
 | --- | --- | --- |
 | `VAULT_PREFIX` | `""` | Prefix for the vault in R2. Must be empty or end with `/`. |
 | `INBOX_FOLDER` | `"Inbox"` | Destination folder relative to the vault root. |
+| `ATTACHMENTS_FOLDER` | `"Attachments"` | Destination folder for image clips, relative to the vault root (ADR 0011). |
+| `MAX_IMAGE_BYTES` | `"10485760"` | Maximum accepted image size in bytes for image clips (ADR 0011). |
 | `ENABLE_SUMMARY` | `"true"` | Enables summarization. |
 | `ENABLE_AUTO_TAGS` | `"false"` | Generates LLM tags when no manual tags are supplied. The legacy name `ENABLE_AUTO_TAG` is also accepted. |
 | `AUTO_TAGS_ALLOWLIST` | `""` | Additional fixed hostname tags, for example `zenn.dev:zenn,github.com:github`. |
@@ -486,6 +519,12 @@ Other practices:
 - Remotely Save encryption must be disabled for this pipeline.
 - Timestamps are fixed to JST (`+09:00`). Change `jstStamp` and `jstIso` in
   `src/index.ts` if you need another time zone.
+- Text/Markdown clips have no summarization, auto-tagging, or duplicate
+  detection (ADR 0011). If a Markdown clip's own frontmatter is included in
+  the body, it is embedded as-is under `## 本文` and is not merged with the
+  generated frontmatter.
+- Image clips accept PNG/JPEG/GIF/WEBP only; SVG and other file types
+  (including PDF) are rejected with `415` (ADR 0011).
 
 ## Roadmap
 
