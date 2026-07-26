@@ -32,7 +32,7 @@ export function detectContentKind(
   return 'json'
 }
 
-function isNonEmptyString(v: unknown): v is string {
+export function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0
 }
 

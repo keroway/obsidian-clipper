@@ -38,6 +38,7 @@ import type { Bindings } from './bindings'
 import {
   classifyJsonBody,
   detectContentKind,
+  isNonEmptyString,
   type TextClipBody,
   type UrlClipBody,
 } from './clip-input'
@@ -248,7 +249,11 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 // ---- テキスト/Markdown クリップ (ADR 0011) ----
 // URL が無いため要約・自動タグ・ホストタグ・URL 重複検知の対象外。
 async function handleTextClip(c: AppContext, payload: TextClipBody) {
-  const bodyText = payload.markdown || payload.text || ''
+  const bodyText = isNonEmptyString(payload.markdown)
+    ? payload.markdown
+    : isNonEmptyString(payload.text)
+      ? payload.text
+      : ''
 
   const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
   const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
@@ -383,7 +388,7 @@ async function handleImageClip(c: AppContext) {
       body: `![[${attachmentsFolder}/${filename}]]`,
       createdIso: jstIso(now),
     })
-    const noteFilename = `${stamp}_${slug}.md`
+    const noteFilename = `${stamp}_${slug}_${uniq}.md`
     notePath = `${prefix}${folder}/${noteFilename}`
     await c.env.VAULT.put(notePath, noteBody, {
       httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
