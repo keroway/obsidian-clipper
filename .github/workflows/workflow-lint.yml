@@ -1,0 +1,22 @@
+# 各リポジトリの .github/workflows/workflow-lint.yml に配置する呼び出し元。
+name: workflow-lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "**/*.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    uses: keroway/.github/.github/workflows/reusable-workflow-lint.yml@main # zizmor: ignore[unpinned-uses] — 同一アカウント内の自前 reusable workflow。SHA ピン化は Phase 2 で検討
