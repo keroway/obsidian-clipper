@@ -1,0 +1,5 @@
+# typos (https://github.com/crate-ci/typos) の誤検知除外。
+
+[default]
+# git コミットハッシュ断片（例: `ba610d4`）は英単語ではない。
+extend-ignore-re = ['`[0-9a-f]{7,40}`']
