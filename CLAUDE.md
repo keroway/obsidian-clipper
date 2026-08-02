@@ -94,6 +94,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `client/ios-shortcut.md` — iOS ショートカット組み立て手順 (ショートカットファイル自体は配布不可)。
 - `README.md` — エンドユーザ向けセットアップ手順。
 - `HANDOFF.md` — 未実装 TODO (URL 重複検知 / 要約モデル切替 / Jina フォールバック / タグ自動付与 / 失敗通知 / テスト / 観測性) と進め方の指針。新規作業前に必読。
+- `.claude/` — Claude Code の共有設定。Stop hook (`hooks/post-stop-check.sh`) が変更範囲に応じて
+  `bun run lint` / `typecheck` / `test` をターン終了ごとに実行する (詳細は `.claude/README.md`)。
 
 ## 作業の進め方
 
