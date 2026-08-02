@@ -7,7 +7,7 @@
 
 ## 構成
 
-```
+```text
 .claude/
 ├── hooks/
 │   └── post-stop-check.sh     # Stop: 変更範囲に応じた決定的検証
