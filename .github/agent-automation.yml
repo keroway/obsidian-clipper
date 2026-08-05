@@ -1,0 +1,11 @@
+# issue-sprint skill (~/.claude/skills/issue-sprint) の opt-in 設定。
+# このファイルの存在 + enabled: true が前提条件のひとつ。詳細は SKILL.md 参照。
+
+enabled: true
+
+# 1サイクルで処理するIssue数の上限。スキップ側の安全弁として1固定(それより厳しい値のみ許可)。
+max_issues_per_cycle: 1
+
+# true + 呼び出し側が `/issue-sprint merge` を明示した場合のみ、
+# CI green・レビュー解決・branch protection を満たした上でsquash mergeを許可する。
+allow_merge: true
