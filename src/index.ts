@@ -13,7 +13,8 @@
  *   4. frontmatter 付き Markdown を生成
  *   5. Inbox/ に PUT
  *
- * ルータ本体のみをここに置く。ロジックは責務ごとに以下へ分割している:
+ * ルータ本体は Hono ルーティングと POST /clip の入力種別分岐・委譲のみに絞っている。
+ * ロジックは責務ごとに以下へ分割している:
  *   src/bindings.ts     — Bindings 型
  *   src/url.ts          — normalizeUrl / hostname
  *   src/fetch-article.ts — Jina Reader 取得 + Browser Rendering フォールバック
@@ -25,6 +26,8 @@
  *   src/time.ts         — JST タイムスタンプ
  *   src/clip-input.ts   — POST /clip の入力種別判別 (ADR 0011)
  *   src/attachment.ts   — 画像添付の MIME/サイズ検証 (ADR 0011)
+ *   src/text-clip.ts    — テキスト/Markdown クリップの本文生成 + R2 書き込み (ADR 0011)
+ *   src/image-clip.ts   — 画像クリップの multipart パース・重複検知・R2 書き込み・埋め込みノート生成 (ADR 0011)
  */
 
 import type { Context } from 'hono'
@@ -33,28 +36,23 @@ import { bearerAuth } from 'hono/bearer-auth'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import { timingSafeEqual } from 'hono/utils/buffer'
-import { extForMime, resolveMaxImageBytes } from './attachment'
 import type { Bindings } from './bindings'
 import {
   classifyJsonBody,
   detectContentKind,
-  isNonEmptyString,
   type TextClipBody,
   type UrlClipBody,
 } from './clip-input'
 import { fetchArticle } from './fetch-article'
+import { saveImageClip } from './image-clip'
 import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
 import { autoTagsEnabled, hostTagsFor, mergeTags } from './tags'
+import { saveTextClip } from './text-clip'
 import { jstIso, jstStamp } from './time'
 import { hostname, normalizeUrl } from './url'
-import {
-  readUrlIndex,
-  sha1Hex,
-  sha1HexBytes,
-  writeUrlIndexCAS,
-} from './url-index'
+import { readUrlIndex, sha1Hex, writeUrlIndexCAS } from './url-index'
 
 type AppContext = Context<{ Bindings: Bindings }>
 
@@ -248,52 +246,15 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 
 // ---- テキスト/Markdown クリップ (ADR 0011) ----
 // URL が無いため要約・自動タグ・ホストタグ・URL 重複検知の対象外。
+// 本文生成 + R2 書き込みは src/text-clip.ts に委譲する。
 async function handleTextClip(c: AppContext, payload: TextClipBody) {
-  const bodyText = isNonEmptyString(payload.markdown)
-    ? payload.markdown
-    : isNonEmptyString(payload.text)
-      ? payload.text
-      : ''
-
-  const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
-  const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
-
-  const manualTags = payload.tags ?? []
-  const tags = mergeTags(['clipped', ...manualTags])
-
-  const now = new Date()
-  const stamp = jstStamp(now)
-  const firstLine = bodyText.split('\n').find((l) => l.trim().length > 0)
-  const slug =
-    sanitizeForFilename(
-      payload.title || firstLine || payload.note || 'note',
-    ).slice(0, 60) || 'note'
-  const uniq = crypto.randomUUID().slice(0, 8)
-  const filename = `${stamp}_${slug}_${uniq}.md`
-  const key = `${prefix}${folder}/${filename}`
-
-  const body = renderNote({
-    source: 'text-clip',
-    title: payload.title,
-    note: payload.note,
-    tags,
-    body: bodyText,
-    createdIso: jstIso(now),
-  })
-
-  await c.env.VAULT.put(key, body, {
-    httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
-    customMetadata: { source: 'obsidian-clipper', kind: 'text' },
-  })
-
-  return c.json({
-    ok: true,
-    path: key,
-    bytes: new TextEncoder().encode(body).length,
-  })
+  const result = await saveTextClip(c.env, payload)
+  return c.json({ ok: true, ...result })
 }
 
 // ---- 画像クリップ (multipart/form-data, ADR 0011) ----
+// multipart パース・重複検知・R2 書き込み・インデックス更新・埋め込みノート生成は
+// src/image-clip.ts に委譲する。ここでは formData 取得とレスポンス整形のみ行う。
 async function handleImageClip(c: AppContext) {
   let form: FormData
   try {
@@ -302,105 +263,18 @@ async function handleImageClip(c: AppContext) {
     throw new HTTPException(400, { message: 'invalid multipart body' })
   }
 
-  // workers-types の FormData#get() は string | null 固定で File を表現できないため、
-  // 実行時に string でないことを確認した上で File として扱う。
-  const rawImage = form.get('image')
-  if (!rawImage || typeof rawImage === 'string') {
-    throw new HTTPException(400, { message: 'image file is required' })
-  }
-  const file = rawImage as unknown as File
-
-  const ext = extForMime(file.type, file.name)
-  if (!ext) {
-    throw new HTTPException(415, { message: 'unsupported image type' })
-  }
-
-  const maxBytes = resolveMaxImageBytes(c.env.MAX_IMAGE_BYTES)
-  if (file.size > maxBytes) {
-    throw new HTTPException(413, { message: 'image too large' })
-  }
-
-  const buf = await file.arrayBuffer()
-
-  const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
-  const attachmentsFolder = (c.env.ATTACHMENTS_FOLDER || 'Attachments').replace(
-    /^\/+|\/+$/g,
-    '',
-  )
-  const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
-  const indexKey = `${prefix}${folder}/.index/urls.json`
-
   const refresh = c.req.query('refresh') === '1'
-  const hash = await sha1HexBytes(buf)
+  const result = await saveImageClip(c.env, form, refresh)
 
-  const { index: urlIndex } = await readUrlIndex(c.env.VAULT, indexKey)
-  if (!refresh && urlIndex[hash]) {
-    const existing = await c.env.VAULT.head(urlIndex[hash].path)
-    if (existing) {
-      return c.json({ ok: false, duplicate: true, path: urlIndex[hash].path })
-    }
+  if (result.duplicate) {
+    return c.json({ ok: false, duplicate: true, path: result.path })
   }
-
-  const now = new Date()
-  const stamp = jstStamp(now)
-  const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
-  const slug = sanitizeForFilename(origName).slice(0, 60) || 'image'
-  const uniq = crypto.randomUUID().slice(0, 8)
-  const filename = `${stamp}_${slug}_${uniq}.${ext}`
-  const key = `${prefix}${attachmentsFolder}/${filename}`
-
-  await c.env.VAULT.put(key, buf, {
-    httpMetadata: { contentType: file.type || `image/${ext}` },
-    customMetadata: { source: 'obsidian-clipper', kind: 'image' },
-  })
-
-  const createdAt = jstIso(now)
-  await writeUrlIndexCAS(c.env.VAULT, indexKey, (index) => {
-    index[hash] = { path: key, createdAt }
-  })
-
-  // ---- 任意: 埋め込みノートの生成 (embed=1 または title/note/tags 指定時) ----
-  const embedField = form.get('embed')
-  const title = form.get('title')
-  const note = form.get('note')
-  const tagsField = form.get('tags')
-  const wantEmbed =
-    embedField === '1' ||
-    typeof title === 'string' ||
-    typeof note === 'string' ||
-    typeof tagsField === 'string'
-
-  let notePath: string | undefined
-  if (wantEmbed) {
-    const manualTags =
-      typeof tagsField === 'string'
-        ? tagsField
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : []
-    const tags = mergeTags(['clipped', ...manualTags])
-    const noteBody = renderNote({
-      source: 'image-clip',
-      title: typeof title === 'string' ? title : undefined,
-      note: typeof note === 'string' ? note : undefined,
-      tags,
-      body: `![[${attachmentsFolder}/${filename}]]`,
-      createdIso: jstIso(now),
-    })
-    const noteFilename = `${stamp}_${slug}_${uniq}.md`
-    notePath = `${prefix}${folder}/${noteFilename}`
-    await c.env.VAULT.put(notePath, noteBody, {
-      httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
-      customMetadata: { source: 'obsidian-clipper', kind: 'image-note' },
-    })
-  }
-
+  const { path, bytes, embedded, notePath } = result
   return c.json({
     ok: true,
-    path: key,
-    bytes: buf.byteLength,
-    embedded: !!notePath,
+    path,
+    bytes,
+    embedded,
     ...(notePath ? { notePath } : {}),
   })
 }

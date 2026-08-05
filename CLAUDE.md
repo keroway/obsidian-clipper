@@ -76,15 +76,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ファイル地図
 
-- `src/index.ts` — Hono ルータ本体 (`POST /clip` ハンドラ) のみ。ロジックは以下に分割済み:
+- `src/index.ts` — Hono ルータ本体。`POST /clip` の Content-Type / ボディによる入力種別分岐と各ハンドラへの委譲のみに絞っている (ADR 0011 に伴うリファクタで責務別モジュールへ分離済み)。ロジックは以下に分割済み:
   - `src/bindings.ts` — `Bindings` 型 (循環 import 回避のため単独ファイル)
   - `src/url.ts` — `normalizeUrl` / `hostname`
-  - `src/fetch-article.ts` — Jina Reader 取得 + リトライ + Browser Rendering フォールバック
+  - `src/clip-input.ts` — `POST /clip` の入力種別判別 (URL / テキスト・Markdown / multipart, ADR 0011)
+  - `src/fetch-article.ts` — Jina Reader 取得 + リトライ + Browser Rendering フォールバック (URL クリップ用)
+  - `src/text-clip.ts` — テキスト/Markdown クリップの本文生成 + R2 書き込み (ADR 0011)
+  - `src/image-clip.ts` — 画像クリップの multipart パース・重複検知・R2 書き込み・インデックス更新 (CAS)・埋め込みノート生成 (ADR 0011)
+  - `src/attachment.ts` — 画像添付の MIME/サイズ検証 (ADR 0011)
   - `src/llm.ts` — 要約・タグ生成 (Workers AI / Anthropic 呼び出し)
   - `src/prompts.ts` — 要約・タグ生成のプロンプト定数 (`scripts/compare-summary-models.ts` と共有)
   - `src/tags.ts` — タグ正規化・統合・ホスト名 allowlist
   - `src/note.ts` — `renderNote` / ファイル名サニタイズ
-  - `src/url-index.ts` — URL 重複検知インデックス (読み書き)
+  - `src/url-index.ts` — URL/画像 重複検知インデックス (読み書き)
   - `src/notify.ts` — Webhook 通知
   - `src/time.ts` — JST タイムスタンプ生成
 
