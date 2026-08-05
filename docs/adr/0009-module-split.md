@@ -37,6 +37,15 @@ CLAUDE.md には「実装は `src/index.ts` 単一ファイル」という記述
 | `src/bindings.ts` | `Bindings` 型 (循環 import 回避のため単独ファイル) |
 | `src/index.ts` | Hono ルータ (`normalizeUrl` / `hostname` を含む) のみ |
 
+> **追記 (2026-08-05, #58 で実施)**: 当初のスコープでは `handleTextClip` /
+> `handleImageClip` を `src/index.ts` に残す想定だったが、Issue #53
+> (PR #52 の CodeRabbit 指摘の切り出し) でこれも分割対象に追加された。
+> `src/text-clip.ts` (テキスト/Markdown クリップの本文生成 + R2 書き込み) と
+> `src/image-clip.ts` (画像クリップの multipart パース・重複検知・R2 書き込み・
+> インデックス更新(CAS)・埋め込みノート生成) を新設し、`src/index.ts` は
+> `POST /clip` の入力種別分岐と各ハンドラへの委譲のみに絞った。方針・受け入れ
+> 条件はこの ADR と同じ (公開 API 不変・振る舞い不変・テスト green)。
+
 却下した代替案:
 
 - **単一ファイル維持**: プロンプト共有だけを `src/prompts.ts` に切り出し、

@@ -53,7 +53,7 @@ The Worker accepts a URL from a shortcut, bookmarklet, or script; normalizes the
 - Use Bearer authentication with a shared secret stored as a Cloudflare secret.
 - Write directly to the R2 bucket used by Remotely Save, usually under `Inbox/`.
 - Stay within Cloudflare free tiers for typical personal use.
-- Keep the Worker implementation in `src/index.ts`, with tests in `src/index.test.ts`.
+- Keep the Worker implementation in `src/index.ts` (routing and dispatch) plus responsibility-scoped modules under `src/`, with tests in `src/index.test.ts`.
 
 ## Technology stack
 
