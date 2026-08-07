@@ -1,4 +1,26 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status -s)",
+      "Bash(git status --short)",
+      "Bash(git diff)",
+      "Bash(git diff --stat)",
+      "Bash(git diff --cached)",
+      "Bash(git diff HEAD)",
+      "Bash(git log --oneline)",
+      "Bash(git log -p)",
+      "Bash(git log --stat)",
+      "Bash(git show --stat HEAD)",
+      "Bash(git branch)",
+      "Bash(git branch -a)",
+      "Bash(git branch -v)",
+      "Bash(git branch --show-current)",
+      "Bash(ls)",
+      "Bash(ls *)",
+      "Bash(grep *)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
