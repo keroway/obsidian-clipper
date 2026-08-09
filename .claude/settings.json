@@ -16,9 +16,7 @@
       "Bash(git branch -a)",
       "Bash(git branch -v)",
       "Bash(git branch --show-current)",
-      "Bash(ls)",
-      "Bash(ls *)",
-      "Bash(grep *)"
+      "Bash(ls)"
     ]
   },
   "hooks": {
