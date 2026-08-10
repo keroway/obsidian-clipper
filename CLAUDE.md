@@ -31,7 +31,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `bun run tail` — `wrangler tail` で本番ログ
 - `bunx wrangler secret put SHARED_SECRET` — Bearer 認証用シークレット投入
 - `bunx wrangler secret put JINA_API_KEY` — Jina Reader の API キー (任意。未設定でも動くが rate limit が緩くなる)
-  (HANDOFF にある要約モデル切替 TODO を実装するなら `ANTHROPIC_API_KEY` も同様に投入)
+- `bunx wrangler secret put ANTHROPIC_API_KEY` — 要約を Anthropic に切り替える場合 (任意)。
+  切替は実装済みで、`SUMMARY_PROVIDER=anthropic` かつこのキーがある場合のみ Anthropic を使い、
+  どちらかが欠けると Workers AI にフォールバックする (`src/llm.ts`)
 
 テストは vitest + `@cloudflare/vitest-pool-workers` で導入済み（`src/index.test.ts`）。追加テストを書く場合は同ファイルを参照。
 
@@ -97,7 +99,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `client/bookmarklet.js` — Chrome 用ブックマークレットの未 minify 版 (`WORKER_URL` / `SECRET` を書き換えて minify → ブックマーク URL に貼る)。
 - `client/ios-shortcut.md` — iOS ショートカット組み立て手順 (ショートカットファイル自体は配布不可)。
 - `README.md` — エンドユーザ向けセットアップ手順。
-- `HANDOFF.md` — 未実装 TODO (URL 重複検知 / 要約モデル切替 / Jina フォールバック / タグ自動付与 / 失敗通知 / テスト / 観測性) と進め方の指針。新規作業前に必読。
+- `HANDOFF.md` — **MVP 時点の引き継ぎ記録（歴史的文書）**。当時の TODO 候補 7 件のうち
+  6 件（URL 重複検知 / 要約モデル切替 / Jina フォールバック / タグ自動付与 / 失敗通知 / テスト）は
+  実装済みで、対応する ADR がある。未着手は観測性のみ。**現在の設計判断の正典は `docs/adr/`**
+  であり、HANDOFF.md を未実装リストとして読まないこと。要約モデル比較 (#16/#17) の
+  検証結果と Claude Agent SDK 不採用の経緯は、この文書にしかない情報として今も有効。
 - `.claude/` — Claude Code の共有設定。Stop hook (`hooks/post-stop-check.sh`) が変更範囲に応じて
   `bun run lint` / `typecheck` / `test` をターン終了ごとに実行する (詳細は `.claude/README.md`)。
 
