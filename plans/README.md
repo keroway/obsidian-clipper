@@ -7,11 +7,14 @@ This directory contains plans for improving the `obsidian-clipper` repository.
 | #   | Plan                          | Status | Priority | Dependency |
 | --- | ----------------------------- | ------ | -------- | ---------- |
 | 001 | URL Duplicate Detection       | DONE   | High     | None       |
-| 002 | Fetch Robustness (Jina fallback) | TODO | High   | None       |
+| 002 | Fetch Robustness (Jina fallback) | DONE | High   | None       |
 | 003 | Auto Tagging                  | DONE   | Medium   | None       |
 | 004 | README i18n & Tone Rework      | DONE   | Medium   | None       |
 | 005 | Module Split + Shared Prompts (ADR 0009) | DONE | Medium | None |
 | 006 | URL Index CAS + Duplicate Existence Check (ADR 0010) | DONE | Medium | 005 |
+
+005 と 006 に対応する `plans/NNN-*.md` は存在しない。この 2 件は plan を書かずに
+ADR 0009 / ADR 0010 へ直行したため、経緯はその ADR を読むこと。
 
 ## Status Legend
 
