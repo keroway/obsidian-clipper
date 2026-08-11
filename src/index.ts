@@ -115,6 +115,12 @@ app.post('/clip', async (c) => {
       message: 'url, or markdown/text is required',
     })
   }
+  if (classified.droppedTags) {
+    // 正規化して処理は続けるが、黙って捨てると送信側は気づけない (#75)。
+    // 以前は文字列の tags が 1 文字ずつのタグとして frontmatter に書かれており、
+    // エラーも警告も出なかった。
+    console.warn('clip: tags に不正な値が含まれていたため無視しました')
+  }
   return classified.kind === 'url'
     ? handleUrlClip(c, classified.body)
     : handleTextClip(c, classified.body)
