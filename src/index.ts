@@ -127,7 +127,16 @@ app.post('/clip', async (c) => {
 })
 
 app.onError((err, c) => {
-  if (err instanceof HTTPException) return err.getResponse()
+  // HTTPException をそのまま返すと **本文がプレーンテキスト**になり、
+  // README が API 契約として明記している `{ ok: false, error: ... }` と
+  // 食い違う（#77 で 413 のテストを書いていて発覚）。
+  //
+  // クライアントは成功時に JSON を読むので、エラー時だけ形が変わると
+  // パースに失敗して「原因不明の失敗」になる。500 だけが JSON という
+  // 非対称も紛らわしい。全経路を JSON に揃える。
+  if (err instanceof HTTPException) {
+    return c.json({ ok: false, error: err.message }, err.status)
+  }
   console.error('unhandled', err)
   return c.json({ ok: false, error: err.message }, 500)
 })
