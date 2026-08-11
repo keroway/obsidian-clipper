@@ -9,7 +9,11 @@
 
 import { env, SELF } from 'cloudflare:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { extForMime } from './attachment'
+import {
+  DEFAULT_MAX_IMAGE_BYTES,
+  extForMime,
+  resolveMaxImageBytes,
+} from './attachment'
 import type { Bindings } from './bindings'
 import { classifyJsonBody, detectContentKind } from './clip-input'
 import { fetchArticle } from './fetch-article'
@@ -1556,6 +1560,62 @@ describe('POST /clip - text/markdown clip', () => {
 
 // ─────────── Integration: image clip (multipart/form-data, ADR 0011) ───────────
 
+describe('エラーレスポンスの形（#77）', () => {
+  // README は全エラーを `{ ok: false, error: ... }` と明記しているが、
+  // onError が HTTPException をそのまま返していたため **4xx はプレーンテキスト**
+  // だった（500 だけが JSON という非対称）。クライアントは成功時に JSON を
+  // 読むので、エラー時だけ形が変わるとパースに失敗して原因不明の失敗になる。
+  it('400 が JSON で返る', async () => {
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(400)
+    const json = (await res.json()) as { ok: boolean; error: string }
+    expect(json.ok).toBe(false)
+    expect(json.error).toBeTruthy()
+  })
+
+  it('401 が JSON で返る', async () => {
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com/a' }),
+    })
+
+    expect(res.status).toBe(401)
+    const json = (await res.json()) as { ok: boolean; error: string }
+    expect(json.ok).toBe(false)
+  })
+})
+
+describe('resolveMaxImageBytes', () => {
+  // 不正な値でも既定へ倒れる（#77）。env の設定ミスで画像クリップ全体が
+  // 壊れるより、既定の 10 MiB で動き続けるほうがよい、という判断の固定。
+  it('未設定なら既定値', () => {
+    expect(resolveMaxImageBytes(undefined)).toBe(DEFAULT_MAX_IMAGE_BYTES)
+  })
+
+  it('数値として解釈できない値なら既定値', () => {
+    expect(resolveMaxImageBytes('abc')).toBe(DEFAULT_MAX_IMAGE_BYTES)
+    expect(resolveMaxImageBytes('')).toBe(DEFAULT_MAX_IMAGE_BYTES)
+  })
+
+  it('0 以下なら既定値（全画像を拒否する設定にしない）', () => {
+    expect(resolveMaxImageBytes('0')).toBe(DEFAULT_MAX_IMAGE_BYTES)
+    expect(resolveMaxImageBytes('-1')).toBe(DEFAULT_MAX_IMAGE_BYTES)
+  })
+
+  it('正の数はそのまま使う', () => {
+    expect(resolveMaxImageBytes('1024')).toBe(1024)
+  })
+})
+
 describe('POST /clip - image clip', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -1578,6 +1638,41 @@ describe('POST /clip - image clip', () => {
       body: form,
     })
   }
+
+  /// MAX_IMAGE_BYTES を超える画像を 413 で拒否すること（#77）。
+  ///
+  /// README が API レスポンスとして明記している分岐だが、テストが無かった。
+  /// テスト env の MAX_IMAGE_BYTES は 10 MiB なので、10 MiB のダミーを送るより
+  /// **env を一時的に小さくして**境界を跨がせる（巨大なバッファを作らない）。
+  it('MAX_IMAGE_BYTES を超える画像を 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_IMAGE_BYTES?: string }
+    const original = testEnv.MAX_IMAGE_BYTES
+    testEnv.MAX_IMAGE_BYTES = '4'
+    try {
+      // 7 バイト > 4 バイト。
+      const res = await postImage({}, 'too-large-1.png', pngBytes(20))
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('too large')
+    } finally {
+      testEnv.MAX_IMAGE_BYTES = original
+    }
+  })
+
+  it('上限ちょうどのサイズは受け入れる（境界は > で判定）', async () => {
+    const testEnv = env as typeof env & { MAX_IMAGE_BYTES?: string }
+    const original = testEnv.MAX_IMAGE_BYTES
+    // pngBytes は 7 バイト。ちょうど 7 なら通る。
+    testEnv.MAX_IMAGE_BYTES = '7'
+    try {
+      const res = await postImage({}, 'exactly-max-1.png', pngBytes(21))
+      expect(res.status).toBe(200)
+    } finally {
+      testEnv.MAX_IMAGE_BYTES = original
+    }
+  })
 
   it('saves an image under Attachments/ without an embed note by default', async () => {
     const res = await postImage({}, 'unique-shot-1.png', pngBytes(10))
