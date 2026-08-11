@@ -365,6 +365,70 @@ describe('classifyJsonBody', () => {
     expect(result?.kind).toBe('url')
   })
 
+  // ─── 実行時の型検証（#75）───
+  //
+  // 以前は `as unknown as UrlClipBody` で素通しており、型注釈は付いているのに
+  // 実際の値が違うという状態を作っていた。下流が `.trim()` や spread で壊れる。
+
+  it('文字列の tags を配列として受け取らない（1 文字ずつのタグ化を防ぐ）', () => {
+    // 以前はここが素通りし、`mergeTags(['clipped', ...'test'])` が
+    // `clipped, t, e, s, t` を frontmatter に書き込んでいた。
+    const result = classifyJsonBody({
+      url: 'https://example.com/a',
+      tags: 'test',
+    })
+
+    expect(result?.body.tags).toEqual([])
+    expect(result?.droppedTags).toBe(true)
+  })
+
+  it('配列の中の非文字列要素だけを捨てる', () => {
+    const result = classifyJsonBody({
+      url: 'https://example.com/a',
+      tags: ['ok', 42, null, 'fine'],
+    })
+
+    expect(result?.body.tags).toEqual(['ok', 'fine'])
+    expect(result?.droppedTags).toBe(true)
+  })
+
+  it('正しい tags は droppedTags を立てない', () => {
+    const result = classifyJsonBody({
+      url: 'https://example.com/a',
+      tags: ['a', 'b'],
+    })
+
+    expect(result?.body.tags).toEqual(['a', 'b'])
+    expect(result?.droppedTags).toBe(false)
+  })
+
+  it('文字列でない title / note / selection を undefined にする', () => {
+    // 以前は素通りし、`payload.title?.trim()` が実行時に落ちて 500 になっていた。
+    const result = classifyJsonBody({
+      url: 'https://example.com/a',
+      title: 123,
+      note: ['x'],
+      selection: { a: 1 },
+    })
+
+    expect(result?.body.title).toBeUndefined()
+    expect(result?.kind === 'url' && result.body.selection).toBeUndefined()
+    expect(result?.body.note).toBeUndefined()
+  })
+
+  it('text クリップでも同じ検証が効く', () => {
+    const result = classifyJsonBody({
+      markdown: '# hi',
+      tags: 'oops',
+      title: 7,
+    })
+
+    expect(result?.kind).toBe('text')
+    expect(result?.body.tags).toEqual([])
+    expect(result?.body.title).toBeUndefined()
+    expect(result?.droppedTags).toBe(true)
+  })
+
   it('classifies as text when markdown is provided without url', () => {
     const result = classifyJsonBody({ markdown: '# hi' })
     expect(result?.kind).toBe('text')
