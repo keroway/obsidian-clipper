@@ -1060,6 +1060,81 @@ describe('POST /clip - auto tagging', () => {
     expect(content).toContain('- "zenn"')
   })
 
+  /// タグ生成が失敗したとき、要約・本文取得と同じく webhook へ通知すること（#70）。
+  ///
+  /// ADR 0006 は「失敗を無音にしない」としており本文取得・要約は通知していたが、
+  /// 後発の ADR 0008 で足したタグ生成パスだけ `console.warn` 止まりだった。
+  /// LLM 障害でタグが付かなくなっても、ログを能動的に見ない限り気づけない。
+  ///
+  /// テスト env には `NOTIFY_WEBHOOK_URL` / `ENABLE_AUTO_TAGS` が無いので、
+  /// **この 2 つをその場で注入する**。注入しないとタグ生成自体が走らず、
+  /// 「通知が来ない」を合格と読み違える（実際、最初はそうなっていて
+  /// 通知処理を消す変異が素通りした）。
+  it('notifies the webhook when auto-tagging fails', async () => {
+    // `cloudflare:test` の `env` は wrangler.test.jsonc の vars から型が
+    // 生成されるため、そこに無いキー（本番のみの NOTIFY_WEBHOOK_URL 等）は
+    // 型に現れない。テスト内で注入するのでここだけ緩めた型で見る。
+    const testEnv = env as typeof env & {
+      NOTIFY_WEBHOOK_URL?: string
+      ENABLE_AUTO_TAGS?: string
+      AI: unknown
+    }
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        // タグ生成は本文 200 文字超でしか走らない（wantTags の条件）。
+        // 短い本文だと生成自体がスキップされ、通知が無いことを合格と
+        // 読み違える。
+        return new Response(`Title: T\n\n${'Body content here. '.repeat(20)}`, {
+          status: 200,
+        })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    const original = {
+      notify: testEnv.NOTIFY_WEBHOOK_URL,
+      autoTags: testEnv.ENABLE_AUTO_TAGS,
+      ai: testEnv.AI,
+    }
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    testEnv.ENABLE_AUTO_TAGS = 'true'
+    // anthropic 経路は失敗しても workers-ai へフォールバックするだけで throw しない。
+    // generateTags を実際に reject させるには最終段の AI バインディングを落とす。
+    testEnv.AI = {
+      run: async () => {
+        throw new Error('AI unavailable')
+      },
+    } as unknown as typeof testEnv.AI
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/tag-notify-1',
+        }),
+      })
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
+      expect(
+        notified.some((b) => b.includes('タグ生成失敗')),
+        `タグ生成失敗の通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = original.notify
+      testEnv.ENABLE_AUTO_TAGS = original.autoTags
+      testEnv.AI = original.ai
+    }
+  })
+
   it('only clipped tag for unknown host without user tags', async () => {
     const res = await clip('https://unknown-host-xyz.example/a/tag-test-2')
     const json = (await res.json()) as { ok: boolean; path: string }
