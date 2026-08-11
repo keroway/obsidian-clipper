@@ -13,6 +13,9 @@ dist/
 
 .pi/
 
+# Codex プラグインのローカル生成物（絶対パスを含む個人ローカル層）
+.codex/
+
 # Environment / secrets
 .env
 .env.*
