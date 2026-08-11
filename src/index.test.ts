@@ -724,19 +724,26 @@ describe('summarizeWithProvider', () => {
     vi.restoreAllMocks()
   })
 
-  const workersAiEnv = (response: string) =>
-    ({
-      SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
-      AI: { run: async () => ({ response }) },
-    }) as unknown as Bindings
+  // AI.run を spy にして**呼び出し回数**まで見る。結果値だけを検証すると、
+  // anthropic 経路のつもりが workers-ai にフォールバックしていても気づけない
+  // （どちらも同じ文字列を返しうる）。
+  const workersAiEnv = (response: string) => {
+    const run = vi.fn(async () => ({ response }))
+    return {
+      env: {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings,
+      run,
+    }
+  }
 
   it('uses workers-ai when SUMMARY_PROVIDER is unset', async () => {
-    const result = await summarizeWithProvider(
-      workersAiEnv('workers-ai summary'),
-      'body text',
-      'Title',
-    )
+    const { env: testEnv, run } = workersAiEnv('workers-ai summary')
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
     expect(result).toBe('workers-ai summary')
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
   it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
@@ -752,13 +759,17 @@ describe('summarizeWithProvider', () => {
       return new Response('nope', { status: 404 })
     })
 
+    const { env, run } = workersAiEnv('should not be used')
     const testEnv = {
-      ...workersAiEnv('should not be used'),
+      ...env,
       SUMMARY_PROVIDER: 'anthropic',
       ANTHROPIC_API_KEY: 'sk-test',
     } as Bindings
     const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
     expect(result).toBe('anthropic summary')
+    // anthropic が成功したので workers-ai へは落ちていない。
+    expect(run).not.toHaveBeenCalled()
   })
 
   it('falls back to workers-ai once when anthropic fails', async () => {
@@ -766,13 +777,17 @@ describe('summarizeWithProvider', () => {
       return new Response('server error', { status: 500 })
     })
 
+    const { env, run } = workersAiEnv('fallback summary')
     const testEnv = {
-      ...workersAiEnv('fallback summary'),
+      ...env,
       SUMMARY_PROVIDER: 'anthropic',
       ANTHROPIC_API_KEY: 'sk-test',
     } as Bindings
     const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
     expect(result).toBe('fallback summary')
+    // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
+    expect(run).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -781,19 +796,26 @@ describe('generateTags', () => {
     vi.restoreAllMocks()
   })
 
-  const workersAiEnv = (response: string) =>
-    ({
-      SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
-      AI: { run: async () => ({ response }) },
-    }) as unknown as Bindings
+  // AI.run を spy にして**呼び出し回数**まで見る。結果値だけを検証すると、
+  // anthropic 経路のつもりが workers-ai にフォールバックしていても気づけない
+  // （どちらも同じ文字列を返しうる）。
+  const workersAiEnv = (response: string) => {
+    const run = vi.fn(async () => ({ response }))
+    return {
+      env: {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings,
+      run,
+    }
+  }
 
   it('uses workers-ai when SUMMARY_PROVIDER is unset', async () => {
-    const tags = await generateTags(
-      workersAiEnv('tag1, tag2'),
-      'body text',
-      'Title',
-    )
+    const { env: testEnv, run } = workersAiEnv('tag1, tag2')
+    const tags = await generateTags(testEnv, 'body text', 'Title')
+
     expect(tags).toEqual(['tag1', 'tag2'])
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
   it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
@@ -807,13 +829,17 @@ describe('generateTags', () => {
       return new Response('nope', { status: 404 })
     })
 
+    const { env, run } = workersAiEnv('should not be used')
     const testEnv = {
-      ...workersAiEnv('should not be used'),
+      ...env,
       SUMMARY_PROVIDER: 'anthropic',
       ANTHROPIC_API_KEY: 'sk-test',
     } as Bindings
     const tags = await generateTags(testEnv, 'body text', 'Title')
+
     expect(tags).toEqual(['tagA', 'tagB'])
+    // anthropic が成功したので workers-ai へは落ちていない。
+    expect(run).not.toHaveBeenCalled()
   })
 
   it('falls back to workers-ai when anthropic fails (does not throw)', async () => {
@@ -821,13 +847,17 @@ describe('generateTags', () => {
       return new Response('server error', { status: 500 })
     })
 
+    const { env, run } = workersAiEnv('fallbackTag')
     const testEnv = {
-      ...workersAiEnv('fallbackTag'),
+      ...env,
       SUMMARY_PROVIDER: 'anthropic',
       ANTHROPIC_API_KEY: 'sk-test',
     } as Bindings
     const tags = await generateTags(testEnv, 'body text', 'Title')
+
     expect(tags).toEqual(['fallbackTag'])
+    // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
+    expect(run).toHaveBeenCalledTimes(1)
   })
 })
 
