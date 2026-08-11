@@ -121,4 +121,3 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ```
 
 - iOS では Obsidian 起動時にしか Remotely Save が pull しない。「クリップ即時反映」は仕様外なので、即時性を担保する設計に倒さないこと。
-- **WIP ブランチ**: `wip/non-url-clip` に「URL を持たないクリップ（手書きメモ等）を受け付ける」機能の作業途中コードが退避してある。non-URL clip に触れる作業を始める前にこのブランチの内容を確認し、重複実装を避けること。
