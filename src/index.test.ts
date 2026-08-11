@@ -932,6 +932,59 @@ describe('notifyWebhook', () => {
     vi.restoreAllMocks()
   })
 
+  // ─── HTTP ステータスの検証（#72）───
+  //
+  // 以前は fetch の例外だけを catch しており、webhook 側が 401/404/500 を
+  // 返しても成功として素通りしていた。「本文取得失敗」等の通知が届いていない
+  // ことに誰も気づけない — **通知の仕組み自体が silent fallback** だった。
+
+  it('非 2xx を受けたら警告を出す', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('bad token', { status: 401 }),
+    )
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toContain('401')
+  })
+
+  it('警告にレスポンス本文を含める（理由がステータスだけでは分からないため）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('channel not found', { status: 404 }),
+    )
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    expect(String(warn.mock.calls[0]?.[0])).toContain('channel not found')
+  })
+
+  it('本文が長いときは切り詰める（HTML が返ることがある）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('x'.repeat(500), { status: 500 }),
+    )
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    const logged = String(warn.mock.calls[0]?.[0])
+    expect(logged.length).toBeLessThan(300)
+    expect(logged).toContain('…')
+  })
+
+  it('2xx なら警告を出さない', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('ok', { status: 200 }),
+    )
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('POSTs the message as text/content JSON to the webhook url', async () => {
     let capturedUrl = ''
     let capturedBody = ''
