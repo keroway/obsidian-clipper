@@ -13,7 +13,9 @@ import { extForMime } from './attachment'
 import type { Bindings } from './bindings'
 import { classifyJsonBody, detectContentKind } from './clip-input'
 import { fetchArticle } from './fetch-article'
+import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
+import { notifyWebhook } from './notify'
 import {
   autoTagsEnabled,
   hostTagsFor,
@@ -712,6 +714,186 @@ describe('fetchArticle', () => {
     expect(calls).toBe(1)
     expect(r.md).toBe('')
     expect(r.err).toContain('404')
+  })
+})
+
+// ─────────────────── summarizeWithProvider / generateTags ───────────────────
+
+describe('summarizeWithProvider', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // AI.run を spy にして**呼び出し回数**まで見る。結果値だけを検証すると、
+  // anthropic 経路のつもりが workers-ai にフォールバックしていても気づけない
+  // （どちらも同じ文字列を返しうる）。
+  const workersAiEnv = (response: string) => {
+    const run = vi.fn(async () => ({ response }))
+    return {
+      env: {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings,
+      run,
+    }
+  }
+
+  it('uses workers-ai when SUMMARY_PROVIDER is unset', async () => {
+    const { env: testEnv, run } = workersAiEnv('workers-ai summary')
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('workers-ai summary')
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (input.toString() === 'https://api.anthropic.com/v1/messages') {
+        return new Response(
+          JSON.stringify({
+            content: [{ type: 'text', text: 'anthropic summary' }],
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const { env, run } = workersAiEnv('should not be used')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('anthropic summary')
+    // anthropic が成功したので workers-ai へは落ちていない。
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('falls back to workers-ai once when anthropic fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response('server error', { status: 500 })
+    })
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('fallback summary')
+    // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('generateTags', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // AI.run を spy にして**呼び出し回数**まで見る。結果値だけを検証すると、
+  // anthropic 経路のつもりが workers-ai にフォールバックしていても気づけない
+  // （どちらも同じ文字列を返しうる）。
+  const workersAiEnv = (response: string) => {
+    const run = vi.fn(async () => ({ response }))
+    return {
+      env: {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings,
+      run,
+    }
+  }
+
+  it('uses workers-ai when SUMMARY_PROVIDER is unset', async () => {
+    const { env: testEnv, run } = workersAiEnv('tag1, tag2')
+    const tags = await generateTags(testEnv, 'body text', 'Title')
+
+    expect(tags).toEqual(['tag1', 'tag2'])
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (input.toString() === 'https://api.anthropic.com/v1/messages') {
+        return new Response(
+          JSON.stringify({ content: [{ type: 'text', text: 'tagA, tagB' }] }),
+          { status: 200 },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const { env, run } = workersAiEnv('should not be used')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const tags = await generateTags(testEnv, 'body text', 'Title')
+
+    expect(tags).toEqual(['tagA', 'tagB'])
+    // anthropic が成功したので workers-ai へは落ちていない。
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('falls back to workers-ai when anthropic fails (does not throw)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response('server error', { status: 500 })
+    })
+
+    const { env, run } = workersAiEnv('fallbackTag')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const tags = await generateTags(testEnv, 'body text', 'Title')
+
+    expect(tags).toEqual(['fallbackTag'])
+    // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─────────────────────────── notifyWebhook ───────────────────────────
+
+describe('notifyWebhook', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs the message as text/content JSON to the webhook url', async () => {
+    let capturedUrl = ''
+    let capturedBody = ''
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      capturedUrl = input.toString()
+      capturedBody = String((init as RequestInit | undefined)?.body ?? '')
+      return new Response('ok', { status: 200 })
+    })
+
+    await notifyWebhook('https://webhook.test/notify', 'hello world')
+
+    expect(capturedUrl).toBe('https://webhook.test/notify')
+    expect(JSON.parse(capturedBody)).toEqual({
+      text: 'hello world',
+      content: 'hello world',
+    })
+  })
+
+  it('swallows fetch errors without rejecting the caller', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error('network down')
+    })
+
+    await expect(
+      notifyWebhook('https://webhook.test/notify', 'hello'),
+    ).resolves.toBeUndefined()
   })
 })
 
