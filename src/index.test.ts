@@ -34,6 +34,50 @@ import {
 // ─────────────────────────── normalizeUrl ───────────────────────────
 
 describe('normalizeUrl', () => {
+  // ─── ホスト限定のトラッキング除去（#73）───
+  //
+  // `s` / `t` / `si` は X や YouTube では共有用トラッキングだが、一般的な
+  // クエリ名でもある。ホストを見ずに削ると別サイトの意味あるパラメータを壊す。
+
+  it('WordPress の検索クエリ ?s= を残す', () => {
+    // 以前はここが `https://blog.example.com/` に化けて、検索結果ページが
+    // トップページとしてクリップされていた。
+    expect(normalizeUrl('https://blog.example.com/?s=gleam')).toBe(
+      'https://blog.example.com/?s=gleam',
+    )
+  })
+
+  it('YouTube の再生開始位置 ?t= を残しつつ si は削る', () => {
+    expect(
+      normalizeUrl('https://www.youtube.com/watch?v=abc&t=120&si=xyz'),
+    ).toBe('https://www.youtube.com/watch?v=abc&t=120')
+  })
+
+  it('X の共有パラメータ s / t は削る', () => {
+    expect(normalizeUrl('https://x.com/user/status/1?s=20&t=abc')).toBe(
+      'https://x.com/user/status/1',
+    )
+  })
+
+  it('twitter.com は x.com へ正規化したうえで s / t を削る', () => {
+    expect(normalizeUrl('https://twitter.com/u/status/1?s=20')).toBe(
+      'https://x.com/u/status/1',
+    )
+  })
+
+  it('サブドメインにも適用する（m.youtube.com）', () => {
+    expect(normalizeUrl('https://m.youtube.com/watch?v=abc&si=xyz')).toBe(
+      'https://m.youtube.com/watch?v=abc',
+    )
+  })
+
+  it('ホスト名の部分一致で誤爆しない（evil-x.com）', () => {
+    // ドット境界で判定しないと `evil-x.com` が `x.com` に一致してしまう。
+    expect(normalizeUrl('https://evil-x.com/?s=keep')).toBe(
+      'https://evil-x.com/?s=keep',
+    )
+  })
+
   it('strips UTM parameters', () => {
     const input =
       'https://example.com/article?utm_source=twitter&utm_medium=social&utm_campaign=test'
