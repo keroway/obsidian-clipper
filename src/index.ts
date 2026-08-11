@@ -191,6 +191,19 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     wantTags
       ? generateTags(c.env, articleMd, articleTitle).catch((e) => {
           console.warn('auto-tag failed', (e as Error).message)
+          // 要約・本文取得と同じく webhook へも通知する。ここだけ
+          // console.warn 止まりだと、LLM 障害でタグが付かなくなっても
+          // Cloudflare のログを能動的に見ない限り気づけない（#70）。
+          // ADR 0006 の「失敗を無音にしない」意図が、後発の ADR 0008 で
+          // 追加されたタグ生成パスに反映されていなかった。
+          if (c.env.NOTIFY_WEBHOOK_URL) {
+            c.executionCtx.waitUntil(
+              notifyWebhook(
+                c.env.NOTIFY_WEBHOOK_URL,
+                `[obsidian-clipper] タグ生成失敗: ${url} (${(e as Error).message})`,
+              ),
+            )
+          }
           return [] as string[]
         })
       : Promise.resolve([] as string[]),
