@@ -517,7 +517,7 @@ install 時に age gate を使っています。
 - iOS では、Obsidian と Remotely Save が pull した後にノートが表示されます。
 - Remotely Save の暗号化は無効にする必要があります。
 - タイムスタンプは JST (`+09:00`) 固定です。他のタイムゾーンにしたい
-  場合は `src/index.ts` の `jstStamp` と `jstIso` を変更してください。
+  場合は `src/time.ts` の `jstStamp` と `jstIso` を変更してください。
 - テキスト/Markdown クリップには要約・自動タグ・重複検知がありません
   (ADR 0011)。本文に自前の frontmatter が含まれる Markdown を送ると、
   そのまま `## 本文` 配下に埋め込まれ、生成される frontmatter とは
