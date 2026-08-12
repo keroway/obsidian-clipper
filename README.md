@@ -518,7 +518,7 @@ Other practices:
 - On iOS, the note appears after Obsidian and Remotely Save perform a pull.
 - Remotely Save encryption must be disabled for this pipeline.
 - Timestamps are fixed to JST (`+09:00`). Change `jstStamp` and `jstIso` in
-  `src/index.ts` if you need another time zone.
+  `src/time.ts` if you need another time zone.
 - Text/Markdown clips have no summarization, auto-tagging, or duplicate
   detection (ADR 0011). If a Markdown clip's own frontmatter is included in
   the body, it is embedded as-is under `## 本文` and is not merged with the
