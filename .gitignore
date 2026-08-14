@@ -30,4 +30,6 @@ dist/
 # Codex CLI / agent-assets symlink (~/.agents) / pi のローカル生成物・個人状態。
 # いずれも絶対パスや個人環境固有の値を含みうる個人ローカル層で、
 # 共有すると他の環境で壊れる (keroway/agent-assets#186)
-.agents/
+# 末尾スラッシュの相対パターンはリポジトリ直下のシンボリックリンクにマッチしないため
+# ルート限定の /.agents にする (CodeRabbit 指摘、keroway/timeline-dsl-lp@2b1f2c0 参照)。
+/.agents
