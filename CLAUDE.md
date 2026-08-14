@@ -11,8 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **PM は bun**（keroway ワークスペースの標準は pnpm だが、このリポジトリは例外として bun を維持する）。
   理由: Worker 単体の小規模リポで bun のスクリプト実行・install が最速なことに加え、
   `bunfig.toml` の `minimumReleaseAge` によるサプライチェーン緩和が使えるため。
-- **`bunfig.toml` の `minimumReleaseAge = 604800` (7 日)**: 公開から 7 日未満の npm 版を
-  install / update 段階でブロックする。`bun update --latest` しても 7 日以内の最新版は
+- **`bunfig.toml` の `minimumReleaseAge = 259200` (3 日)**: 公開から 3 日未満の npm 版を
+  install / update 段階でブロックする（agent-assets#171、2026-08-14決定でワークスペース全体の
+  水準に合わせ、従来の7日から短縮）。`bun update --latest` しても 3 日以内の最新版は
   取得されない（これは仕様であってバグではない）。緊急 patch を取り込みたいときだけ
   `minimumReleaseAgeExcludes` に個別追加する。CI の `bun install --frozen-lockfile` では
   age gate は効かない（lockfile 固定なので不要）。
