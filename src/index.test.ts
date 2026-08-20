@@ -592,6 +592,39 @@ describe('writeUrlIndexCAS', () => {
     expect(index.concurrent.path).toBe('Inbox/concurrent.md')
     expect(index.mine.path).toBe('Inbox/mine.md')
   })
+
+  it('does not overwrite a corrupted index with an empty one (#92)', async () => {
+    const corruptKey = 'test-cas-index-corrupt.json'
+    await env.VAULT.put(corruptKey, '{ this is not valid json')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await writeUrlIndexCAS(env.VAULT, corruptKey, (index) => {
+      index.new = {
+        path: 'Inbox/new.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+
+    const stored = await env.VAULT.get(corruptKey)
+    expect(await stored?.text()).toBe('{ this is not valid json')
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+})
+
+describe('readUrlIndex', () => {
+  it('returns corrupted: true and warns when the stored JSON is invalid', async () => {
+    const corruptKey = 'test-read-index-corrupt.json'
+    await env.VAULT.put(corruptKey, '{ this is not valid json')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { index, corrupted } = await readUrlIndex(env.VAULT, corruptKey)
+
+    expect(corrupted).toBe(true)
+    expect(index).toEqual({})
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
 })
 
 // ─────────────────────────── tags ───────────────────────────
