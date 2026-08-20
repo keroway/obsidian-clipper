@@ -497,8 +497,8 @@ GitHub 側では次の設定を推奨します。
 install 時に age gate を使っています。
 
 - Bun: [`bunfig.toml`](./bunfig.toml) の
-  `[install].minimumReleaseAge = 604800` 秒。
-- npm: [`.npmrc`](./.npmrc) の `minimum-release-age=10080` 分。
+  `[install].minimumReleaseAge = 259200` 秒。
+- npm: [`.npmrc`](./.npmrc) の `minimum-release-age=4320` 分。
   npm 11.5.1 以上が必要です。
 
 その他の運用:

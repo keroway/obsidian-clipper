@@ -499,8 +499,8 @@ The project uses an install-time age gate to reduce exposure to newly published
 malicious package versions.
 
 - Bun: [`bunfig.toml`](./bunfig.toml) sets
-  `[install].minimumReleaseAge = 604800` seconds.
-- npm: [`.npmrc`](./.npmrc) sets `minimum-release-age=10080` minutes. npm
+  `[install].minimumReleaseAge = 259200` seconds.
+- npm: [`.npmrc`](./.npmrc) sets `minimum-release-age=4320` minutes. npm
   11.5.1 or newer is required.
 
 Other practices:
