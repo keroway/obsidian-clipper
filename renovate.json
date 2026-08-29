@@ -36,9 +36,9 @@
       "groupName": "github-actions"
     },
     {
-      "description": "bunfig.toml の minimumReleaseAge (7日) と揃え、公開7日未満のバージョンではPRを作らない",
+      "description": "bunfig.toml の minimumReleaseAge (3日) と揃え、公開3日未満のバージョンではPRを作らない",
       "matchDatasources": ["npm"],
-      "minimumReleaseAge": "7 days"
+      "minimumReleaseAge": "3 days"
     }
   ],
   "prConcurrentLimit": 5,
