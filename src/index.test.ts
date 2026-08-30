@@ -1198,6 +1198,58 @@ describe('POST /clip integration', () => {
     expect(content).not.toContain('utm_source')
   })
 
+  it('does not overwrite an existing note when title extraction fails for two different URLs on the same host (#103)', async () => {
+    // No "Title:" line in the Jina response, so articleTitle stays undefined
+    // and the filename slug falls back to hostname(url) — identical for both
+    // URLs below, which used to make the filename collide within the same
+    // second and silently overwrite the first note.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async (input: RequestInfo | URL) => {
+        const url = input.toString()
+        if (url.startsWith('https://r.jina.ai/')) {
+          return new Response('First article body.', { status: 200 })
+        }
+        return new Response('Not Found', { status: 404 })
+      },
+    )
+
+    const clip = async (url: string) =>
+      SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url }),
+      })
+
+    const res1 = await clip('https://example.com/collision-article-one')
+    expect(res1.status).toBe(200)
+    const json1 = (await res1.json()) as { ok: boolean; path: string }
+    expect(json1.ok).toBe(true)
+
+    const res2 = await clip('https://example.com/collision-article-two')
+    expect(res2.status).toBe(200)
+    const json2 = (await res2.json()) as { ok: boolean; path: string }
+    expect(json2.ok).toBe(true)
+
+    // Different filenames despite identical slug/hostname fallback.
+    expect(json2.path).not.toBe(json1.path)
+
+    // Both notes still exist independently — the second clip must not have
+    // overwritten the first.
+    const stored1 = await env.VAULT.get(json1.path)
+    const stored2 = await env.VAULT.get(json2.path)
+    expect(stored1).not.toBeNull()
+    expect(stored2).not.toBeNull()
+    // biome-ignore lint/style/noNonNullAssertion: expect() assertions above guarantee non-null
+    const content1 = await stored1!.text()
+    // biome-ignore lint/style/noNonNullAssertion: expect() assertions above guarantee non-null
+    const content2 = await stored2!.text()
+    expect(content1).toContain('collision-article-one')
+    expect(content2).toContain('collision-article-two')
+  })
+
   it('returns bytes as actual UTF-8 byte length (not UTF-16 code unit count)', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(
       async (input: RequestInfo | URL) => {
