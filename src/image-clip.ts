@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception'
 import { extForMime, resolveMaxImageBytes } from './attachment'
 import type { Bindings } from './bindings'
 import { renderNote, sanitizeForFilename } from './note'
+import { notifyWebhook } from './notify'
 import { mergeTags } from './tags'
 import { jstIso, jstStamp } from './time'
 import { readUrlIndex, sha1HexBytes, writeUrlIndexCAS } from './url-index'
@@ -132,9 +133,15 @@ export async function saveImageClip(
   })
 
   const createdAt = jstIso(now)
-  await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+  const indexWritten = await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
     index[hash] = { path: key, createdAt }
   })
+  if (!indexWritten && env.NOTIFY_WEBHOOK_URL) {
+    await notifyWebhook(
+      env.NOTIFY_WEBHOOK_URL,
+      `[obsidian-clipper] urls.json が壊れているため重複検知インデックスの更新をスキップしました: ${key}`,
+    )
+  }
 
   const notePath = wantEmbed
     ? await buildEmbedNote(now, `${attachmentsFolder}/${filename}`)

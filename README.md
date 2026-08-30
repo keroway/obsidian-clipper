@@ -527,6 +527,10 @@ Other practices:
   generated frontmatter.
 - Image clips accept PNG/JPEG/GIF/WEBP only; SVG and other file types
   (including PDF) are rejected with `415` (ADR 0011).
+- If `Inbox/.index/urls.json` becomes corrupted, duplicate-detection updates
+  are skipped to avoid losing existing history (ADR 0010). Notes still save
+  normally. If `NOTIFY_WEBHOOK_URL` is configured, a webhook notification is
+  sent each time a write is skipped this way.
 
 ## Roadmap
 
