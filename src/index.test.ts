@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_MAX_IMAGE_BYTES,
   extForMime,
+  matchesImageMagicBytes,
   resolveMaxImageBytes,
 } from './attachment'
 import type { Bindings } from './bindings'
@@ -525,6 +526,45 @@ describe('extForMime', () => {
 
   it('returns null for svg (excluded in v1)', () => {
     expect(extForMime('image/svg+xml')).toBeNull()
+  })
+})
+
+describe('matchesImageMagicBytes（#105: 申告 MIME 偽装対策）', () => {
+  const svgBytes = new TextEncoder().encode('<svg></svg>').buffer
+
+  it('accepts a real PNG signature for ext=png', () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    expect(matchesImageMagicBytes('png', png.buffer)).toBe(true)
+  })
+
+  it('rejects SVG bytes disguised as image/png', () => {
+    expect(matchesImageMagicBytes('png', svgBytes)).toBe(false)
+  })
+
+  it('accepts a real JPEG signature for ext=jpg', () => {
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0])
+    expect(matchesImageMagicBytes('jpg', jpg.buffer)).toBe(true)
+  })
+
+  it('accepts a real GIF signature for ext=gif', () => {
+    const gif = new TextEncoder().encode('GIF89a').buffer
+    expect(matchesImageMagicBytes('gif', gif)).toBe(true)
+  })
+
+  it('accepts a real WebP signature for ext=webp', () => {
+    const webp = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
+    ])
+    expect(matchesImageMagicBytes('webp', webp.buffer)).toBe(true)
+  })
+
+  it('rejects mismatched real signature (declared png, actual jpeg bytes)', () => {
+    const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0])
+    expect(matchesImageMagicBytes('png', jpg.buffer)).toBe(false)
+  })
+
+  it('returns false for an unknown ext', () => {
+    expect(matchesImageMagicBytes('bmp', svgBytes)).toBe(false)
   })
 })
 
@@ -1773,13 +1813,27 @@ describe('POST /clip - image clip', () => {
     vi.restoreAllMocks()
   })
 
+  // 実バイト検証(#105)が通るよう、PNG シグネチャ(8バイト)をそのまま含める。
+  // seed はハッシュを変えて画像ごとに一意にするための付加分。
   const pngBytes = (seed: number) =>
-    new Uint8Array([0x89, 0x50, 0x4e, 0x47, seed, seed + 1, seed + 2])
+    new Uint8Array([
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a,
+      seed,
+      seed + 1,
+      seed + 2,
+    ])
 
   const postImage = (
     fields: Record<string, string> = {},
     filename = 'shot.png',
-    bytes = pngBytes(1),
+    bytes: Uint8Array<ArrayBufferLike> = pngBytes(1),
   ) => {
     const form = new FormData()
     form.set('image', new File([bytes], filename, { type: 'image/png' }))
@@ -1801,7 +1855,7 @@ describe('POST /clip - image clip', () => {
     const original = testEnv.MAX_IMAGE_BYTES
     testEnv.MAX_IMAGE_BYTES = '4'
     try {
-      // 7 バイト > 4 バイト。
+      // 11 バイト > 4 バイト。
       const res = await postImage({}, 'too-large-1.png', pngBytes(20))
 
       expect(res.status).toBe(413)
@@ -1811,6 +1865,19 @@ describe('POST /clip - image clip', () => {
     } finally {
       testEnv.MAX_IMAGE_BYTES = original
     }
+  })
+
+  /// 申告 MIME/拡張子が image/png でも、実バイト列が SVG(や他の任意バイト列)なら
+  /// 415 で拒否すること（#105）。ADR 0011 の SVG 除外方針を MIME 偽装で回避できない
+  /// ようにする実バイト検証(matchesImageMagicBytes)の統合テスト。
+  it('申告 MIME が image/png でも実バイトが SVG なら 415 で拒否する', async () => {
+    const svgBytes = new TextEncoder().encode('<svg></svg>')
+    const res = await postImage({}, 'disguised.png', svgBytes)
+
+    expect(res.status).toBe(415)
+    const json = (await res.json()) as { ok: boolean; error: string }
+    expect(json.ok).toBe(false)
+    expect(json.error).toContain('unsupported')
   })
 
   /// urls.json が壊れていて writeUrlIndexCAS が書き込みをスキップしたとき、
@@ -1869,8 +1936,8 @@ describe('POST /clip - image clip', () => {
   it('上限ちょうどのサイズは受け入れる（境界は > で判定）', async () => {
     const testEnv = env as typeof env & { MAX_IMAGE_BYTES?: string }
     const original = testEnv.MAX_IMAGE_BYTES
-    // pngBytes は 7 バイト。ちょうど 7 なら通る。
-    testEnv.MAX_IMAGE_BYTES = '7'
+    // pngBytes は 11 バイト。ちょうど 11 なら通る。
+    testEnv.MAX_IMAGE_BYTES = '11'
     try {
       const res = await postImage({}, 'exactly-max-1.png', pngBytes(21))
       expect(res.status).toBe(200)
