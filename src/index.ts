@@ -295,7 +295,13 @@ async function handleImageClip(c: AppContext) {
   const result = await saveImageClip(c.env, form, refresh)
 
   if (result.duplicate) {
-    return c.json({ ok: false, duplicate: true, path: result.path })
+    return c.json({
+      ok: false,
+      duplicate: true,
+      path: result.path,
+      embedded: result.embedded,
+      ...(result.notePath ? { notePath: result.notePath } : {}),
+    })
   }
   const { path, bytes, embedded, notePath } = result
   return c.json({

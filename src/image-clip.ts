@@ -10,7 +10,7 @@ import { jstIso, jstStamp } from './time'
 import { readUrlIndex, sha1HexBytes, writeUrlIndexCAS } from './url-index'
 
 export type ImageClipResult =
-  | { duplicate: true; path: string }
+  | { duplicate: true; path: string; embedded: boolean; notePath?: string }
   | {
       duplicate: false
       path: string
@@ -58,11 +58,63 @@ export async function saveImageClip(
 
   const hash = await sha1HexBytes(buf)
 
+  // ---- 任意: 埋め込みノートの生成 (embed=1 または title/note/tags 指定時) ----
+  const embedField = form.get('embed')
+  const title = form.get('title')
+  const note = form.get('note')
+  const tagsField = form.get('tags')
+  const wantEmbed =
+    embedField === '1' ||
+    typeof title === 'string' ||
+    typeof note === 'string' ||
+    typeof tagsField === 'string'
+
+  const buildEmbedNote = async (
+    now: Date,
+    embedTarget: string,
+  ): Promise<string> => {
+    const stamp = jstStamp(now)
+    const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
+    const slug = sanitizeForFilename(origName).slice(0, 60) || 'image'
+    const uniq = crypto.randomUUID().slice(0, 8)
+    const manualTags =
+      typeof tagsField === 'string'
+        ? tagsField
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : []
+    const tags = mergeTags(['clipped', ...manualTags])
+    const noteBody = renderNote({
+      source: 'image-clip',
+      title: typeof title === 'string' ? title : undefined,
+      note: typeof note === 'string' ? note : undefined,
+      tags,
+      body: `![[${embedTarget}]]`,
+      createdIso: jstIso(now),
+    })
+    const noteFilename = `${stamp}_${slug}_${uniq}.md`
+    const notePath = `${prefix}${folder}/${noteFilename}`
+    await env.VAULT.put(notePath, noteBody, {
+      httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
+      customMetadata: { source: 'obsidian-clipper', kind: 'image-note' },
+    })
+    return notePath
+  }
+
   const { index: urlIndex } = await readUrlIndex(env.VAULT, indexKey)
   if (!refresh && urlIndex[hash]) {
-    const existing = await env.VAULT.head(urlIndex[hash].path)
+    const existingPath = urlIndex[hash].path
+    const existing = await env.VAULT.head(existingPath)
     if (existing) {
-      return { duplicate: true, path: urlIndex[hash].path }
+      if (!wantEmbed) {
+        return { duplicate: true, path: existingPath, embedded: false }
+      }
+      const embedTarget = existingPath.startsWith(prefix)
+        ? existingPath.slice(prefix.length)
+        : existingPath
+      const notePath = await buildEmbedNote(new Date(), embedTarget)
+      return { duplicate: true, path: existingPath, embedded: true, notePath }
     }
   }
 
@@ -84,42 +136,9 @@ export async function saveImageClip(
     index[hash] = { path: key, createdAt }
   })
 
-  // ---- 任意: 埋め込みノートの生成 (embed=1 または title/note/tags 指定時) ----
-  const embedField = form.get('embed')
-  const title = form.get('title')
-  const note = form.get('note')
-  const tagsField = form.get('tags')
-  const wantEmbed =
-    embedField === '1' ||
-    typeof title === 'string' ||
-    typeof note === 'string' ||
-    typeof tagsField === 'string'
-
-  let notePath: string | undefined
-  if (wantEmbed) {
-    const manualTags =
-      typeof tagsField === 'string'
-        ? tagsField
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : []
-    const tags = mergeTags(['clipped', ...manualTags])
-    const noteBody = renderNote({
-      source: 'image-clip',
-      title: typeof title === 'string' ? title : undefined,
-      note: typeof note === 'string' ? note : undefined,
-      tags,
-      body: `![[${attachmentsFolder}/${filename}]]`,
-      createdIso: jstIso(now),
-    })
-    const noteFilename = `${stamp}_${slug}_${uniq}.md`
-    notePath = `${prefix}${folder}/${noteFilename}`
-    await env.VAULT.put(notePath, noteBody, {
-      httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
-      customMetadata: { source: 'obsidian-clipper', kind: 'image-note' },
-    })
-  }
+  const notePath = wantEmbed
+    ? await buildEmbedNote(now, `${attachmentsFolder}/${filename}`)
+    : undefined
 
   return {
     duplicate: false,

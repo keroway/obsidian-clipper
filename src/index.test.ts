@@ -1796,6 +1796,61 @@ describe('POST /clip - image clip', () => {
     expect(json2.path).toBe(json1.path)
   })
 
+  it('duplicate bytes with an embed intent still create an embed note referencing the existing image (#99)', async () => {
+    const bytes = pngBytes(120)
+    const res1 = await postImage({}, 'dup-embed-1.png', bytes)
+    expect(res1.status).toBe(200)
+    const json1 = (await res1.json()) as { ok: boolean; path: string }
+    expect(json1.ok).toBe(true)
+
+    const res2 = await postImage(
+      { title: 'メモ追記' },
+      'dup-embed-2.png',
+      bytes,
+    )
+    expect(res2.status).toBe(200)
+    const json2 = (await res2.json()) as {
+      ok: boolean
+      duplicate: boolean
+      path: string
+      embedded: boolean
+      notePath?: string
+    }
+    expect(json2.ok).toBe(false)
+    expect(json2.duplicate).toBe(true)
+    expect(json2.path).toBe(json1.path)
+    expect(json2.embedded).toBe(true)
+    expect(json2.notePath).toMatch(/Inbox\/.*\.md$/)
+
+    // The image itself was not re-uploaded; the note references the existing path.
+    const stored = await env.VAULT.get(json2.notePath as string)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('source: image-clip')
+    expect(content).toContain('メモ追記')
+    expect(content).toContain(
+      `![[${json1.path.replace(/^.*Attachments\//, 'Attachments/')}]]`,
+    )
+  })
+
+  it('duplicate bytes without an embed intent report embedded:false (#99)', async () => {
+    const bytes = pngBytes(140)
+    const res1 = await postImage({}, 'dup-no-embed-1.png', bytes)
+    expect(res1.status).toBe(200)
+
+    const res2 = await postImage({}, 'dup-no-embed-2.png', bytes)
+    const json2 = (await res2.json()) as {
+      ok: boolean
+      duplicate: boolean
+      embedded: boolean
+      notePath?: string
+    }
+    expect(json2.ok).toBe(false)
+    expect(json2.duplicate).toBe(true)
+    expect(json2.embedded).toBe(false)
+    expect(json2.notePath).toBeUndefined()
+  })
+
   it('returns 401 when Authorization header is missing (multipart too)', async () => {
     const form = new FormData()
     form.set(
