@@ -2,7 +2,11 @@
 // multipart パース + 重複検知 + R2 書き込み + インデックス更新 (CAS) + 埋め込みノート生成。
 
 import { HTTPException } from 'hono/http-exception'
-import { extForMime, resolveMaxImageBytes } from './attachment'
+import {
+  extForMime,
+  matchesImageMagicBytes,
+  resolveMaxImageBytes,
+} from './attachment'
 import type { Bindings } from './bindings'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
@@ -48,6 +52,9 @@ export async function saveImageClip(
   }
 
   const buf = await file.arrayBuffer()
+  if (!matchesImageMagicBytes(ext, buf)) {
+    throw new HTTPException(415, { message: 'unsupported image type' })
+  }
 
   const folder = (env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
   const attachmentsFolder = (env.ATTACHMENTS_FOLDER || 'Attachments').replace(
