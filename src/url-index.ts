@@ -49,19 +49,22 @@ const CAS_MAX_ATTEMPTS = 2
  * 既存の `urls.json` が壊れていて (`corrupted: true`) パースできない場合は、
  * 空の index で上書きすると既存の重複検知履歴を丸ごと失うため、書き込みを
  * 中断してログのみ残す (#92)。
+ *
+ * 戻り値は「実際に書き込んだか」を示す。呼び出し元はこれを見て、スキップされた
+ * 場合に `NOTIFY_WEBHOOK_URL` へ通知するかを判断する (#101)。
  */
 export async function writeUrlIndexCAS(
   vault: R2Bucket,
   key: string,
   mutate: (index: UrlIndex) => void,
-): Promise<void> {
+): Promise<boolean> {
   for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
     const { index, etag, corrupted } = await readUrlIndex(vault, key)
     if (corrupted) {
       console.warn(
         `writeUrlIndexCAS: skipping write to "${key}" because the existing index failed to parse`,
       )
-      return
+      return false
     }
     mutate(index)
     const body = JSON.stringify(index)
@@ -69,7 +72,7 @@ export async function writeUrlIndexCAS(
       httpMetadata: { contentType: 'application/json; charset=utf-8' },
       onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
     })
-    if (result) return // 成功
+    if (result) return true // 成功
     // null = プリコンディション不一致 (競合)。次のループで再読込・再試行。
   }
   // 最終試行でも競合した場合は可用性優先で無条件 PUT にフォールバック。
@@ -78,10 +81,11 @@ export async function writeUrlIndexCAS(
     console.warn(
       `writeUrlIndexCAS: skipping fallback write to "${key}" because the existing index failed to parse`,
     )
-    return
+    return false
   }
   mutate(index)
   await vault.put(key, JSON.stringify(index), {
     httpMetadata: { contentType: 'application/json; charset=utf-8' },
   })
+  return true
 }

@@ -260,9 +260,21 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 
   // ---- 5. インデックス更新 (楽観ロック CAS, ADR 0010) ----
   const createdAt = jstIso(now)
-  await writeUrlIndexCAS(c.env.VAULT, indexKey, (index) => {
-    index[hash] = { path: key, createdAt }
-  })
+  const indexWritten = await writeUrlIndexCAS(
+    c.env.VAULT,
+    indexKey,
+    (index) => {
+      index[hash] = { path: key, createdAt }
+    },
+  )
+  if (!indexWritten && c.env.NOTIFY_WEBHOOK_URL) {
+    c.executionCtx.waitUntil(
+      notifyWebhook(
+        c.env.NOTIFY_WEBHOOK_URL,
+        `[obsidian-clipper] urls.json が壊れているため重複検知インデックスの更新をスキップしました: ${key}`,
+      ),
+    )
+  }
 
   return c.json({
     ok: true,

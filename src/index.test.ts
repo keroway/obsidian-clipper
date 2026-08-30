@@ -532,9 +532,10 @@ describe('writeUrlIndexCAS', () => {
   const indexKey = 'test-cas-index.json'
 
   it('writes a new index when none exists', async () => {
-    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+    const written = await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
       index.abc = { path: 'Inbox/a.md', createdAt: '2026-01-01T00:00:00+09:00' }
     })
+    expect(written).toBe(true)
     const { index } = await readUrlIndex(env.VAULT, indexKey)
     expect(index.abc.path).toBe('Inbox/a.md')
   })
@@ -593,18 +594,19 @@ describe('writeUrlIndexCAS', () => {
     expect(index.mine.path).toBe('Inbox/mine.md')
   })
 
-  it('does not overwrite a corrupted index with an empty one (#92)', async () => {
+  it('does not overwrite a corrupted index with an empty one (#92) and reports the skip (#101)', async () => {
     const corruptKey = 'test-cas-index-corrupt.json'
     await env.VAULT.put(corruptKey, '{ this is not valid json')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    await writeUrlIndexCAS(env.VAULT, corruptKey, (index) => {
+    const written = await writeUrlIndexCAS(env.VAULT, corruptKey, (index) => {
       index.new = {
         path: 'Inbox/new.md',
         createdAt: '2026-01-01T00:00:00+09:00',
       }
     })
 
+    expect(written).toBe(false)
     const stored = await env.VAULT.get(corruptKey)
     expect(await stored?.text()).toBe('{ this is not valid json')
     expect(warnSpy).toHaveBeenCalled()
@@ -1515,6 +1517,71 @@ describe('POST /clip - auto tagging', () => {
     }
   })
 
+  /// urls.json が壊れていて writeUrlIndexCAS が書き込みをスキップしたとき、
+  /// 本文取得/要約/タグ生成と同じく webhook へ通知すること（#101）。
+  ///
+  /// #92 で「空インデックスで上書きしない」対応は入ったが、通知は
+  /// console.warn 止まりで追加されなかった。urls.json が一度壊れると、
+  /// ノート自体は保存され続けるのに重複検知だけが気づかれずに劣化し続ける。
+  it('notifies the webhook when the url index is corrupted and the write is skipped', async () => {
+    const testEnv = env as typeof env & { NOTIFY_WEBHOOK_URL?: string }
+    const original = testEnv.NOTIFY_WEBHOOK_URL
+
+    // 他のテストが同じ本番 index key (Inbox/.index/urls.json) を共有しているため、
+    // 壊す前の内容を退避して必ず復元する。復元しないと後続テストの重複検知が壊れる。
+    const indexKey = 'Inbox/.index/urls.json'
+    const previous = await env.VAULT.get(indexKey)
+    const previousBody = previous ? await previous.text() : null
+    await env.VAULT.put(indexKey, '{ this is not valid json')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: T\n\nBody content here.', { status: 200 })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/index-corrupt-notify-1',
+        }),
+      })
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
+      expect(
+        notified.some((b) =>
+          b.includes('重複検知インデックスの更新をスキップ'),
+        ),
+        `index 破損の通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+
+      // index 自体は上書きされていない (#92 の不変条件を維持)。
+      const stored = await env.VAULT.get(indexKey)
+      expect(await stored?.text()).toBe('{ this is not valid json')
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = original
+      warnSpy.mockRestore()
+      if (previousBody === null) {
+        await env.VAULT.delete(indexKey)
+      } else {
+        await env.VAULT.put(indexKey, previousBody)
+      }
+    }
+  })
+
   it('only clipped tag for unknown host without user tags', async () => {
     const res = await clip('https://unknown-host-xyz.example/a/tag-test-2')
     const json = (await res.json()) as { ok: boolean; path: string }
@@ -1691,6 +1758,59 @@ describe('POST /clip - image clip', () => {
       expect(json.error).toContain('too large')
     } finally {
       testEnv.MAX_IMAGE_BYTES = original
+    }
+  })
+
+  /// urls.json が壊れていて writeUrlIndexCAS が書き込みをスキップしたとき、
+  /// image clip でも webhook へ通知すること（#101）。URL clip と同じ index
+  /// (`Inbox/.index/urls.json`) を共有しているため、破損の影響は両経路に及ぶ。
+  it('notifies the webhook when the url index is corrupted and the write is skipped', async () => {
+    const testEnv = env as typeof env & { NOTIFY_WEBHOOK_URL?: string }
+    const original = testEnv.NOTIFY_WEBHOOK_URL
+
+    // 他のテストが同じ本番 index key (Inbox/.index/urls.json) を共有しているため、
+    // 壊す前の内容を退避して必ず復元する。復元しないと後続テストの重複検知が壊れる。
+    const indexKey = 'Inbox/.index/urls.json'
+    const previous = await env.VAULT.get(indexKey)
+    const previousBody = previous ? await previous.text() : null
+    await env.VAULT.put(indexKey, '{ this is not valid json')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    try {
+      const res = await postImage(
+        {},
+        'index-corrupt-notify-1.png',
+        pngBytes(30),
+      )
+      expect(res.status).toBe(200)
+      expect(
+        notified.some((b) =>
+          b.includes('重複検知インデックスの更新をスキップ'),
+        ),
+        `index 破損の通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+
+      const stored = await env.VAULT.get(indexKey)
+      expect(await stored?.text()).toBe('{ this is not valid json')
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = original
+      warnSpy.mockRestore()
+      if (previousBody === null) {
+        await env.VAULT.delete(indexKey)
+      } else {
+        await env.VAULT.put(indexKey, previousBody)
+      }
     }
   })
 
