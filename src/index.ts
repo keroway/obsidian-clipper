@@ -233,7 +233,8 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   const slug =
     sanitizeForFilename(articleTitle || hostname(url) || 'clip').slice(0, 60) ||
     'clip'
-  const filename = `${stamp}_${slug}.md`
+  const uniq = crypto.randomUUID().slice(0, 8)
+  const filename = `${stamp}_${slug}_${uniq}.md`
   const key = `${prefix}${folder}/${filename}`
 
   // ---- 4. ノート本文を組み立てて R2 に書き込み ----
