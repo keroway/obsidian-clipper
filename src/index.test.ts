@@ -1598,6 +1598,21 @@ describe('POST /clip - auto tagging', () => {
     expect(content).toContain('- "zenn"')
   })
 
+  it('keeps allowlist host tag even when many manual tags would overflow the cap (#104)', async () => {
+    // clipped(1) + zenn(1) + 6 manual = 8 == cap. A 7th manual tag must be
+    // dropped, not the host allowlist tag.
+    const manualTags = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    const res = await clip(
+      'https://zenn.dev/foo/articles/tag-test-2',
+      manualTags,
+    )
+    const json = (await res.json()) as { ok: boolean; tags: string[] }
+    expect(json.ok).toBe(true)
+    expect(json.tags).toContain('zenn')
+    expect(json.tags).toHaveLength(8)
+    expect(json.tags).not.toContain('g')
+  })
+
   /// タグ生成が失敗したとき、要約・本文取得と同じく webhook へ通知すること（#70）。
   ///
   /// ADR 0006 は「失敗を無音にしない」としており本文取得・要約は通知していたが、

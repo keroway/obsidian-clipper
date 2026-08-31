@@ -224,8 +224,11 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
       : Promise.resolve([] as string[]),
   ])
 
-  // ---- 2.5 タグ統合 (clipped + ユーザ + allowlist + LLM) ----
-  const tags = mergeTags(['clipped', ...manualTags, ...hostTags, ...llmTags])
+  // ---- 2.5 タグ統合 (clipped + allowlist + ユーザ + LLM) ----
+  // hostTags (ホスト名 allowlist) をユーザ指定タグより先に詰める。合計上限 8 件
+  // (MAX_AUTO_TAGS_TOTAL, #104) に達すると後続は無音で切り捨てられるため、
+  // 手動タグを多く渡してもホスト allowlist タグが消えないようにする。
+  const tags = mergeTags(['clipped', ...hostTags, ...manualTags, ...llmTags])
 
   // ---- 3. 保存パス決定 ----
   const now = new Date()
@@ -282,6 +285,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     path: key,
     bytes: new TextEncoder().encode(body).length,
     summarized: !!summary,
+    tags,
   })
 }
 
