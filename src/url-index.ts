@@ -17,21 +17,44 @@ export async function sha1Hex(text: string): Promise<string> {
 
 type ReadResult = { index: UrlIndex; etag?: string; corrupted?: boolean }
 
+// JSON としては valid でも UrlIndex のスキーマ (非配列 object, 各 entry が
+// string の path/createdAt を持つ Record) から外れている場合を弾く (#109)。
+function isValidUrlIndex(value: unknown): value is UrlIndex {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false
+  }
+  return Object.values(value).every(
+    (entry) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as IndexEntry).path === 'string' &&
+      typeof (entry as IndexEntry).createdAt === 'string',
+  )
+}
+
 // index を etag と共に読む。CAS 書き込みの前提となる現在の etag を保持するため。
-// JSON パースに失敗した場合は空の index を返しつつ `corrupted: true` を立てて、
-// 「index が存在しない」場合と区別できるようにする (呼び出し元が誤って上書きしないため)。
+// JSON パースに失敗した場合、または JSON としては valid でも UrlIndex のスキーマ外
+// (null / 配列 / 不正な entry 等) の場合は空の index を返しつつ `corrupted: true` を
+// 立てて、「index が存在しない」場合と区別できるようにする (呼び出し元が誤って
+// 上書きしないため, #109)。
 export async function readUrlIndex(
   vault: R2Bucket,
   key: string,
 ): Promise<ReadResult> {
   const obj = await vault.get(key)
   if (!obj) return { index: {} }
+  let parsed: unknown
   try {
-    return { index: (await obj.json()) as UrlIndex, etag: obj.etag }
+    parsed = await obj.json()
   } catch (err) {
     console.warn(`readUrlIndex: failed to parse "${key}" as JSON`, err)
     return { index: {}, etag: obj.etag, corrupted: true }
   }
+  if (!isValidUrlIndex(parsed)) {
+    console.warn(`readUrlIndex: "${key}" is valid JSON but not a UrlIndex`)
+    return { index: {}, etag: obj.etag, corrupted: true }
+  }
+  return { index: parsed, etag: obj.etag }
 }
 
 const CAS_MAX_ATTEMPTS = 2
