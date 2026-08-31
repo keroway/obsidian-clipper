@@ -196,7 +196,7 @@ A three to five sentence summary.
 (Markdown extracted by Jina Reader)
 ```
 
-Filenames use `YYYY-MM-DD_HHMMSS_<slugged-title>.md` with a fixed JST timestamp. The timestamp prevents overwriting when the same URL is clipped more than once.
+Filenames use `YYYY-MM-DD_HHMMSS_<slugged-title>_<uniq>.md` with a fixed JST timestamp. `<uniq>` is a random 8-character suffix (`crypto.randomUUID().slice(0, 8)`) that differs on every clip, so it is not a fixed string. The timestamp and suffix together prevent overwriting when the same URL is clipped more than once.
 
 ## Requirements
 
@@ -304,7 +304,7 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 Example response:
 
 ```json
-{ "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update.md", "bytes": 5824, "summarized": true }
+{ "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update_a1b2c3d4.md", "bytes": 5824, "summarized": true }
 ```
 
 After the next Remotely Save sync, the note should appear in `Inbox/`.

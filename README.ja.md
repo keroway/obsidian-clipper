@@ -196,7 +196,7 @@ summary: "3 から 5 文の要約。"
 (Jina Reader で抽出した Markdown)
 ```
 
-ファイル名は `YYYY-MM-DD_HHMMSS_<slugged-title>.md` です。タイムスタンプは JST 固定で、同じ URL を複数回保存しても上書きされません。
+ファイル名は `YYYY-MM-DD_HHMMSS_<slugged-title>_<uniq>.md` です。`<uniq>` は毎回変わるランダムな8文字のサフィックス（`crypto.randomUUID().slice(0, 8)`）で、固定文字列ではありません。タイムスタンプは JST 固定で、このサフィックスと合わせて同じ URL を複数回保存しても上書きされません。
 
 ## 前提条件
 
@@ -304,7 +304,7 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 レスポンス例:
 
 ```json
-{ "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update.md", "bytes": 5824, "summarized": true }
+{ "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update_a1b2c3d4.md", "bytes": 5824, "summarized": true }
 ```
 
 次回の Remotely Save 同期後、`Inbox/` にノートが表示されます。
