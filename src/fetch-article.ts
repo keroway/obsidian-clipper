@@ -24,12 +24,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * 本文取得。Jina Reader を指数バックオフでリトライ (429/503 のみ) し、
  * 最終的に失敗したら Browser Rendering の /markdown にフォールバックする。
  * すべて失敗しても throw せず { md: '', err } を返す (失敗時 200 の不変条件)。
+ *
+ * フォールバックは ADR 0007 の定義どおり「Jina が 429/503 (または fetch 例外)
+ * で最終的に失敗したとき」だけ発火する。404 等の非リトライ対象ステータスで
+ * break した場合はフォールバックしない (#110)。
  */
 export async function fetchArticle(
   url: string,
   env: Bindings,
 ): Promise<FetchedArticle> {
   let lastErr: string | undefined
+  let retryableFailure = false
   for (let attempt = 0; attempt <= JINA_MAX_RETRIES; attempt++) {
     try {
       const headers: Record<string, string> = { Accept: 'text/plain' }
@@ -51,14 +56,20 @@ export async function fetchArticle(
       }
       lastErr = `jina ${res.status}`
       // リトライ対象ステータスかつ残り回数があるときだけ待って再試行
-      if (JINA_RETRY_STATUS.has(res.status) && attempt < JINA_MAX_RETRIES) {
-        const wait = retryDelayMs(res, attempt)
-        await sleep(wait)
-        continue
+      if (JINA_RETRY_STATUS.has(res.status)) {
+        retryableFailure = true
+        if (attempt < JINA_MAX_RETRIES) {
+          const wait = retryDelayMs(res, attempt)
+          await sleep(wait)
+          continue
+        }
+      } else {
+        retryableFailure = false
       }
       break
     } catch (e) {
       lastErr = `jina ${(e as Error).message}`
+      retryableFailure = true
       if (attempt < JINA_MAX_RETRIES) {
         await sleep(retryDelayMs(null, attempt))
         continue
@@ -67,9 +78,13 @@ export async function fetchArticle(
     }
   }
 
-  // ---- Browser Rendering フォールバック (設定済みの場合のみ) ----
+  // ---- Browser Rendering フォールバック (429/503 の最終失敗時のみ) ----
   // 受け入れ条件 (#34): フォールバックの成否は console.log で残す。
-  if (env.CF_ACCOUNT_ID && env.BROWSER_RENDERING_API_TOKEN) {
+  if (
+    retryableFailure &&
+    env.CF_ACCOUNT_ID &&
+    env.BROWSER_RENDERING_API_TOKEN
+  ) {
     console.log(
       `fetch fallback: trying browser-rendering for ${url} (jina: ${lastErr ?? 'failed'})`,
     )
