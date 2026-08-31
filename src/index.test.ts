@@ -667,6 +667,46 @@ describe('readUrlIndex', () => {
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
+
+  it('returns corrupted: true when the stored JSON is valid but not a UrlIndex (#109)', async () => {
+    const cases: Array<[string, string]> = [
+      ['null', 'null'],
+      ['array', '[]'],
+      ['non-object entry', '{"a":"not-an-object"}'],
+      ['entry missing path', '{"a":{"createdAt":"2026-01-01T00:00:00+09:00"}}'],
+      ['entry missing createdAt', '{"a":{"path":"Inbox/x.md"}}'],
+    ]
+
+    for (const [label, body] of cases) {
+      const key = `test-read-index-schema-${label.replace(/\s+/g, '-')}.json`
+      await env.VAULT.put(key, body)
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const { index, corrupted } = await readUrlIndex(env.VAULT, key)
+
+      expect(corrupted, `case: ${label}`).toBe(true)
+      expect(index, `case: ${label}`).toEqual({})
+      expect(warnSpy, `case: ${label}`).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('accepts a well-formed UrlIndex', async () => {
+    const key = 'test-read-index-valid.json'
+    await env.VAULT.put(
+      key,
+      JSON.stringify({
+        a: { path: 'Inbox/x.md', createdAt: '2026-01-01T00:00:00+09:00' },
+      }),
+    )
+
+    const { index, corrupted } = await readUrlIndex(env.VAULT, key)
+
+    expect(corrupted).toBeUndefined()
+    expect(index).toEqual({
+      a: { path: 'Inbox/x.md', createdAt: '2026-01-01T00:00:00+09:00' },
+    })
+  })
 })
 
 // ─────────────────────────── tags ───────────────────────────
