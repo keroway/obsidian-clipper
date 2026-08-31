@@ -942,6 +942,30 @@ describe('fetchArticle', () => {
     expect(r.md).toBe('')
     expect(r.err).toContain('404')
   })
+
+  it('does not fall back to browser-rendering on non-retryable status (404) even when BR is enabled', async () => {
+    let brCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('gone', { status: 404 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        brCalls++
+        return new Response(
+          JSON.stringify({ success: true, result: 'Title: BR\n\nFrom BR.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/f', brEnv)
+    expect(brCalls).toBe(0)
+    expect(r.md).toBe('')
+    expect(r.via).toBeUndefined()
+    expect(r.err).toContain('404')
+  })
 })
 
 // ─────────────────── summarizeWithProvider / generateTags ───────────────────
