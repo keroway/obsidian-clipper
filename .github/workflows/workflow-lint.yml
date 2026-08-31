@@ -8,6 +8,12 @@ on:
     paths:
       - ".github/workflows/**"
       - "**/*.sh"
+  # pull_request の paths は actionlint・zizmor・shellcheck 向けに絞ってあるため、
+  # 同じジョブに同居する typos がリポジトリ全体（docs/ や src/）を検査する機会が
+  # PR に無い。週次で全ジョブを走らせてそこを埋める（keroway/.github#16）。
+  # cron の分はリポジトリごとにずらして同時発火を避けている。
+  schedule:
+    - cron: "23 7 * * 1"
   workflow_dispatch:
 
 permissions:
