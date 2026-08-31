@@ -394,6 +394,12 @@ Jina Reader and summary failures do not change the response to an error status f
 | `ENABLE_SUMMARY` | `"true"` | Enables summarization. |
 | `ENABLE_AUTO_TAGS` | `"false"` | Generates LLM tags when no manual tags are supplied. The legacy name `ENABLE_AUTO_TAG` is also accepted. |
 | `AUTO_TAGS_ALLOWLIST` | `""` | Additional fixed hostname tags, for example `zenn.dev:zenn,github.com:github`. |
+
+Tags are capped at **8 total**, including the fixed `clipped` tag. They are merged in this
+priority order before truncating: `clipped` → hostname allowlist tags → manual `tags` from the
+request → LLM-generated tags (only when no manual tags were supplied). If you pass many manual
+tags, later ones may be silently dropped once the cap is reached; the final list is echoed back
+in the `/clip` response as `tags` so you can check for truncation.
 | `SUMMARY_MODEL` | `"@cf/meta/llama-3.1-8b-instruct"` | Workers AI model. |
 | `SUMMARY_PROVIDER` | `"workers-ai"` | `"workers-ai"` or `"anthropic"`. |
 | `ANTHROPIC_MODEL` | `"claude-haiku-4-5-20251001"` | Anthropic model ID. |
