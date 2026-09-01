@@ -634,6 +634,124 @@ describe('writeUrlIndexCAS', () => {
     expect(index.mine.path).toBe('Inbox/mine.md')
   })
 
+  // #116: 上のテストは直接 PUT を writeUrlIndexCAS 呼出しより前に完了させているため、
+  // `onlyIf` の precondition mismatch (put が null を返す) を一度も踏まない。
+  // ここでは put をラップして「読み込み後・PUT 前」に他ライタが割り込む状況を
+  // 実際に作り、再読込・再試行の分岐 (src/url-index.ts 84--100) を通す。
+  it('retries after losing the CAS race and keeps the entry written mid-flight (#116)', async () => {
+    const retryKey = 'test-cas-index-retry.json'
+    await writeUrlIndexCAS(env.VAULT, retryKey, (index) => {
+      index.base = {
+        path: 'Inbox/base.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+
+    let putCalls = 0
+    const conflictingVault = {
+      ...env.VAULT,
+      get: env.VAULT.get.bind(env.VAULT),
+      put: async (key: string, value: unknown, options?: unknown) => {
+        putCalls++
+        if (putCalls === 1) {
+          // Land a concurrent writer's change between our read and our PUT,
+          // so the PUT below (still using the stale etag) is rejected.
+          await env.VAULT.put(
+            retryKey,
+            JSON.stringify({
+              base: {
+                path: 'Inbox/base.md',
+                createdAt: '2026-01-01T00:00:00+09:00',
+              },
+              concurrent: {
+                path: 'Inbox/concurrent.md',
+                createdAt: '2026-01-03T00:00:00+09:00',
+              },
+            }),
+          )
+        }
+        // biome-ignore lint/suspicious/noExplicitAny: forwarding to the real R2Bucket.put overload set
+        return (env.VAULT.put as any)(key, value, options)
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only get/put are exercised
+    } as any
+
+    await writeUrlIndexCAS(conflictingVault, retryKey, (index) => {
+      index.mine = {
+        path: 'Inbox/mine.md',
+        createdAt: '2026-01-04T00:00:00+09:00',
+      }
+    })
+
+    expect(putCalls).toBe(2) // 1回目は競合で失敗、2回目の再試行で成功
+    const { index } = await readUrlIndex(env.VAULT, retryKey)
+    expect(index.base.path).toBe('Inbox/base.md')
+    expect(index.concurrent.path).toBe('Inbox/concurrent.md')
+    expect(index.mine.path).toBe('Inbox/mine.md')
+  })
+
+  it('falls back to an unconditional write once every CAS retry is exhausted (#116)', async () => {
+    const fallbackKey = 'test-cas-index-fallback.json'
+    await writeUrlIndexCAS(env.VAULT, fallbackKey, (index) => {
+      index.base = {
+        path: 'Inbox/base.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+
+    let conflictedAttempts = 0
+    const alwaysConflictingVault = {
+      ...env.VAULT,
+      get: env.VAULT.get.bind(env.VAULT),
+      put: async (
+        key: string,
+        value: unknown,
+        options?: { onlyIf?: unknown },
+      ) => {
+        if (options?.onlyIf) {
+          // Every conditional (CAS) attempt loses the race to an external writer.
+          conflictedAttempts++
+          await env.VAULT.put(
+            fallbackKey,
+            JSON.stringify({
+              base: {
+                path: 'Inbox/base.md',
+                createdAt: '2026-01-01T00:00:00+09:00',
+              },
+              external: {
+                path: `Inbox/external-${conflictedAttempts}.md`,
+                createdAt: '2026-01-03T00:00:00+09:00',
+              },
+            }),
+          )
+        }
+        // biome-ignore lint/suspicious/noExplicitAny: forwarding to the real R2Bucket.put overload set
+        return (env.VAULT.put as any)(key, value, options)
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only get/put are exercised
+    } as any
+
+    const wrote = await writeUrlIndexCAS(
+      alwaysConflictingVault,
+      fallbackKey,
+      (index) => {
+        index.mine = {
+          path: 'Inbox/mine.md',
+          createdAt: '2026-01-04T00:00:00+09:00',
+        }
+      },
+    )
+
+    expect(wrote).toBe(true)
+    expect(conflictedAttempts).toBe(2) // CAS_MAX_ATTEMPTS 回とも競合
+    const { index } = await readUrlIndex(env.VAULT, fallbackKey)
+    expect(index.base.path).toBe('Inbox/base.md')
+    expect(index.mine.path).toBe('Inbox/mine.md')
+    // 最終試行時点で見えていた external エントリだけが無条件 PUT に生き残る。
+    // それより前の external エントリが失われるのは #101 の既知のトレードオフ。
+    expect(index.external.path).toBe('Inbox/external-2.md')
+  })
+
   it('does not overwrite a corrupted index with an empty one (#92) and reports the skip (#101)', async () => {
     const corruptKey = 'test-cas-index-corrupt.json'
     await env.VAULT.put(corruptKey, '{ this is not valid json')
