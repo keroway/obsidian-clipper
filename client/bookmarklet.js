@@ -54,6 +54,12 @@
     body: JSON.stringify(payload),
   })
     .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
-    .then(({ ok, j }) => toast(ok ? 'Saved: ' + (j.path || '') : 'Error: ' + JSON.stringify(j), ok))
+    .then(({ ok, j }) => {
+      if (j && j.duplicate) {
+        toast('Already saved: ' + (j.path || ''), false);
+        return;
+      }
+      toast(ok ? 'Saved: ' + (j.path || '') : 'Error: ' + JSON.stringify(j), ok);
+    })
     .catch((e) => toast('Network error: ' + e.message, false));
 })();
