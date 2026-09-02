@@ -987,6 +987,43 @@ describe('fetchArticle', () => {
     expect(r.err).toBeUndefined()
   })
 
+  it('sends Authorization: Bearer header when JINA_API_KEY is set', async () => {
+    let capturedHeaders: HeadersInit | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        capturedHeaders = init?.headers
+        return new Response('Title: Keyed\n\nBody.', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const keyedEnv = { JINA_API_KEY: 'test-key' } as Bindings
+    await fetchArticle('https://example.com/g', keyedEnv)
+    expect(capturedHeaders).toMatchObject({
+      Accept: 'text/plain',
+      Authorization: 'Bearer test-key',
+    })
+  })
+
+  it('omits Authorization header when JINA_API_KEY is unset', async () => {
+    let capturedHeaders: HeadersInit | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        capturedHeaders = init?.headers
+        return new Response('Title: NoKey\n\nBody.', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    await fetchArticle('https://example.com/h', jinaOnlyEnv)
+    expect(capturedHeaders).toMatchObject({ Accept: 'text/plain' })
+    expect(
+      (capturedHeaders as Record<string, string>).Authorization,
+    ).toBeUndefined()
+  })
+
   it('retries on 429 then succeeds (via=jina-retry)', async () => {
     let calls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
