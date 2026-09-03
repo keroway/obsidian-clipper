@@ -38,6 +38,7 @@ export async function saveImageClip(
   env: Bindings,
   form: FormData,
   refresh: boolean,
+  waitUntil: (promise: Promise<unknown>) => void,
 ): Promise<ImageClipResult> {
   const file = parseImageFile(form)
 
@@ -144,9 +145,11 @@ export async function saveImageClip(
     index[hash] = { path: key, createdAt }
   })
   if (!indexWritten && env.NOTIFY_WEBHOOK_URL) {
-    await notifyWebhook(
-      env.NOTIFY_WEBHOOK_URL,
-      `[obsidian-clipper] urls.json が壊れているため重複検知インデックスの更新をスキップしました: ${key}`,
+    waitUntil(
+      notifyWebhook(
+        env.NOTIFY_WEBHOOK_URL,
+        `[obsidian-clipper] urls.json が壊れているため重複検知インデックスの更新をスキップしました: ${key}`,
+      ),
     )
   }
 

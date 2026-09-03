@@ -309,7 +309,9 @@ async function handleImageClip(c: AppContext) {
   }
 
   const refresh = c.req.query('refresh') === '1'
-  const result = await saveImageClip(c.env, form, refresh)
+  const result = await saveImageClip(c.env, form, refresh, (p) =>
+    c.executionCtx.waitUntil(p),
+  )
 
   if (result.duplicate) {
     return c.json({
