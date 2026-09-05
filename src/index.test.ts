@@ -770,6 +770,53 @@ describe('writeUrlIndexCAS', () => {
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
+
+  it('returns false instead of throwing when vault.get rejects (#132)', async () => {
+    const key = 'test-cas-index-get-throws.json'
+    const throwingVault = {
+      ...env.VAULT,
+      get: async () => {
+        throw new Error('simulated R2 outage')
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only get is exercised
+    } as any
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const written = await writeUrlIndexCAS(throwingVault, key, (index) => {
+      index.new = {
+        path: 'Inbox/new.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+
+    expect(written).toBe(false)
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('returns false instead of throwing when vault.put rejects (#132)', async () => {
+    const key = 'test-cas-index-put-throws.json'
+    const throwingVault = {
+      ...env.VAULT,
+      get: env.VAULT.get.bind(env.VAULT),
+      put: async () => {
+        throw new Error('simulated R2 outage')
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only get/put are exercised
+    } as any
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const written = await writeUrlIndexCAS(throwingVault, key, (index) => {
+      index.new = {
+        path: 'Inbox/new.md',
+        createdAt: '2026-01-01T00:00:00+09:00',
+      }
+    })
+
+    expect(written).toBe(false)
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
 })
 
 describe('readUrlIndex', () => {

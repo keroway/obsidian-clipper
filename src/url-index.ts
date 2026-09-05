@@ -73,6 +73,11 @@ const CAS_MAX_ATTEMPTS = 2
  * 空の index で上書きすると既存の重複検知履歴を丸ごと失うため、書き込みを
  * 中断してログのみ残す (#92)。
  *
+ * `vault.get`/`vault.put` 自体が reject した場合 (R2 の一時的なエラー等) も、
+ * 呼び出し元まで例外を伝播させると 500 応答になり、クライアントの再送で
+ * 二重保存を誘発しうる。そのため呼び出し元と同様に書き込み失敗として扱い、
+ * `false` を返す (#132)。
+ *
  * 戻り値は「実際に書き込んだか」を示す。呼び出し元はこれを見て、スキップされた
  * 場合に `NOTIFY_WEBHOOK_URL` へ通知するかを判断する (#101)。
  */
@@ -81,34 +86,39 @@ export async function writeUrlIndexCAS(
   key: string,
   mutate: (index: UrlIndex) => void,
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
-    const { index, etag, corrupted } = await readUrlIndex(vault, key)
+  try {
+    for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+      const { index, etag, corrupted } = await readUrlIndex(vault, key)
+      if (corrupted) {
+        console.warn(
+          `writeUrlIndexCAS: skipping write to "${key}" because the existing index failed to parse`,
+        )
+        return false
+      }
+      mutate(index)
+      const body = JSON.stringify(index)
+      const result = await vault.put(key, body, {
+        httpMetadata: { contentType: 'application/json; charset=utf-8' },
+        onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
+      })
+      if (result) return true // 成功
+      // null = プリコンディション不一致 (競合)。次のループで再読込・再試行。
+    }
+    // 最終試行でも競合した場合は可用性優先で無条件 PUT にフォールバック。
+    const { index, corrupted } = await readUrlIndex(vault, key)
     if (corrupted) {
       console.warn(
-        `writeUrlIndexCAS: skipping write to "${key}" because the existing index failed to parse`,
+        `writeUrlIndexCAS: skipping fallback write to "${key}" because the existing index failed to parse`,
       )
       return false
     }
     mutate(index)
-    const body = JSON.stringify(index)
-    const result = await vault.put(key, body, {
+    await vault.put(key, JSON.stringify(index), {
       httpMetadata: { contentType: 'application/json; charset=utf-8' },
-      onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
     })
-    if (result) return true // 成功
-    // null = プリコンディション不一致 (競合)。次のループで再読込・再試行。
-  }
-  // 最終試行でも競合した場合は可用性優先で無条件 PUT にフォールバック。
-  const { index, corrupted } = await readUrlIndex(vault, key)
-  if (corrupted) {
-    console.warn(
-      `writeUrlIndexCAS: skipping fallback write to "${key}" because the existing index failed to parse`,
-    )
+    return true
+  } catch (err) {
+    console.warn(`writeUrlIndexCAS: vault.get/put failed for "${key}"`, err)
     return false
   }
-  mutate(index)
-  await vault.put(key, JSON.stringify(index), {
-    httpMetadata: { contentType: 'application/json; charset=utf-8' },
-  })
-  return true
 }
