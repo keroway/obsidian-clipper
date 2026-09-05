@@ -183,16 +183,16 @@ summary: "A three to five sentence summary."
 
 <https://example.com/article>
 
-> [!note] Note
+> [!note] メモ
 > User note supplied by the client
 
-## Summary
+## 要約
 A three to five sentence summary.
 
-## Selection
+## 抜粋
 > Text selected on the page, if provided
 
-## Body
+## 本文
 (Markdown extracted by Jina Reader)
 ```
 
