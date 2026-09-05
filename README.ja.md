@@ -183,16 +183,16 @@ summary: "3 から 5 文の要約。"
 
 <https://example.com/article>
 
-> [!note] Note
+> [!note] メモ
 > クライアントから送ったメモ
 
-## Summary
+## 要約
 3 から 5 文の要約。
 
-## Selection
+## 抜粋
 > ページ上で選択していたテキスト
 
-## Body
+## 本文
 (Jina Reader で抽出した Markdown)
 ```
 
