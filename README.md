@@ -1,7 +1,7 @@
 # obsidian-clipper
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Hono](https://img.shields.io/badge/Hono-4.x-E36002?logo=hono&logoColor=white)](https://hono.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
@@ -61,7 +61,7 @@ The Worker accepts a URL from a shortcut, bookmarklet, or script; normalizes the
 | --- | --- | --- |
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) | Edge runtime using V8 isolates |
 | Web framework | [Hono 4.x](https://hono.dev/) | Routing, `bearerAuth`, and CORS middleware |
-| Language | [TypeScript 5.x](https://www.typescriptlang.org/) | Strictly typed implementation |
+| Language | [TypeScript 7.x](https://www.typescriptlang.org/) | Strictly typed implementation |
 | Package manager | [Bun 1.x](https://bun.sh/) or npm | Dependency installation and scripts |
 | CLI | [Wrangler 4.x](https://developers.cloudflare.com/workers/wrangler/) | Local development, deployment, and secret management |
 | Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Obsidian vault storage shared with Remotely Save |

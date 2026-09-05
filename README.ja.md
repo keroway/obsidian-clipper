@@ -1,7 +1,7 @@
 # obsidian-clipper
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Hono](https://img.shields.io/badge/Hono-4.x-E36002?logo=hono&logoColor=white)](https://hono.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
@@ -61,7 +61,7 @@ Worker はショートカット、ブックマークレット、スクリプト�
 | --- | --- | --- |
 | ランタイム | [Cloudflare Workers](https://developers.cloudflare.com/workers/) | V8 isolate 上のエッジ実行環境 |
 | Web フレームワーク | [Hono 4.x](https://hono.dev/) | ルーティング、`bearerAuth`、CORS ミドルウェア |
-| 言語 | [TypeScript 5.x](https://www.typescriptlang.org/) | strict モードの実装 |
+| 言語 | [TypeScript 7.x](https://www.typescriptlang.org/) | strict モードの実装 |
 | パッケージマネージャ | [Bun 1.x](https://bun.sh/) または npm | 依存導入とスクリプト実行 |
 | CLI | [Wrangler 4.x](https://developers.cloudflare.com/workers/wrangler/) | ローカル開発、デプロイ、Secrets 管理 |
 | オブジェクトストレージ | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Remotely Save と共用する Vault ストレージ |
