@@ -118,8 +118,20 @@ app.post('/clip', async (c) => {
   if (classified.droppedTags) {
     // 正規化して処理は続けるが、黙って捨てると送信側は気づけない (#75)。
     // 以前は文字列の tags が 1 文字ずつのタグとして frontmatter に書かれており、
-    // エラーも警告も出なかった。
+    // エラーも警告も出なかった。他の失敗系 (本文取得/要約/タグ生成/インデックス破損)
+    // はすべて webhook 通知まで行っており、ここだけ console.warn 止まりだと
+    // 扱いが不揃いだった (#133)。
+    const target =
+      classified.kind === 'url' ? classified.body.url : 'text/markdown clip'
     console.warn('clip: tags に不正な値が含まれていたため無視しました')
+    if (c.env.NOTIFY_WEBHOOK_URL) {
+      c.executionCtx.waitUntil(
+        notifyWebhook(
+          c.env.NOTIFY_WEBHOOK_URL,
+          `[obsidian-clipper] tags に不正な値が含まれていたため無視しました: ${target}`,
+        ),
+      )
+    }
   }
   return classified.kind === 'url'
     ? handleUrlClip(c, classified.body)
