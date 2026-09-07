@@ -19,4 +19,6 @@ concurrency:
 
 jobs:
   gitleaks:
-    uses: keroway/.github/.github/workflows/reusable-gitleaks.yml@main # zizmor: ignore[unpinned-uses] — 同一アカウント内の自前 reusable workflow。SHA ピン化は Phase 2 で検討
+    # SHA は keroway/.github の main（2026-09-07 時点でレビュー済み、gitleaks v3.0.0 を使用）に
+    # 固定。更新手順は docs/reusable-workflow-sha-pinning.md を参照。
+    uses: keroway/.github/.github/workflows/reusable-gitleaks.yml@2c7eddb9c4039a291aa3237b675d5a0fc001b85e
