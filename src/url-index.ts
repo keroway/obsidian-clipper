@@ -1,6 +1,19 @@
 export type IndexEntry = { path: string; createdAt: string }
 export type UrlIndex = Record<string, IndexEntry>
 
+// writeUrlIndexCAS が書き込みをスキップしたときの通知文言 (#145)。原因ごとに
+// 文言を分け、ストレージ書き込み失敗を JSON 破損と誤って断定しないようにする。
+export function indexSkipMessage(
+  reason: 'corrupted' | 'storage-error' | undefined,
+  path: string,
+): string {
+  const detail =
+    reason === 'corrupted'
+      ? 'urls.json が壊れているため'
+      : 'urls.json への書き込みに失敗したため'
+  return `[obsidian-clipper] ${detail}重複検知インデックスの更新をスキップしました: ${path}`
+}
+
 // バイト列の SHA-1 hex ダイジェスト。画像等バイナリの content hash 重複検知に使う (ADR 0011)。
 export async function sha1HexBytes(
   data: ArrayBuffer | Uint8Array,
@@ -59,6 +72,16 @@ export async function readUrlIndex(
 
 const CAS_MAX_ATTEMPTS = 2
 
+export type WriteUrlIndexResult = {
+  written: boolean
+  // 書き込みをスキップ/失敗した理由。呼び出し元がユーザー向け通知文言を
+  // 出し分けるために使う (#145: ストレージ書き込み失敗を JSON 破損と
+  // 誤って通知していた問題の修正)。
+  //   'corrupted'     — 既存 urls.json がスキーマ外/パース不能で上書きを回避した (#92)
+  //   'storage-error' — vault.get/put 自体が reject した (#132)
+  reason?: 'corrupted' | 'storage-error'
+}
+
 /**
  * index を楽観ロック (Compare-And-Swap) で更新する (ADR 0010)。
  *
@@ -75,17 +98,18 @@ const CAS_MAX_ATTEMPTS = 2
  *
  * `vault.get`/`vault.put` 自体が reject した場合 (R2 の一時的なエラー等) も、
  * 呼び出し元まで例外を伝播させると 500 応答になり、クライアントの再送で
- * 二重保存を誘発しうる。そのため呼び出し元と同様に書き込み失敗として扱い、
- * `false` を返す (#132)。
+ * 二重保存を誘発しうる。そのため呼び出し元と同様に書き込み失敗として扱う (#132)。
  *
- * 戻り値は「実際に書き込んだか」を示す。呼び出し元はこれを見て、スキップされた
- * 場合に `NOTIFY_WEBHOOK_URL` へ通知するかを判断する (#101)。
+ * 戻り値の `written` は「実際に書き込んだか」を示す。呼び出し元はこれを見て、
+ * スキップされた場合に `NOTIFY_WEBHOOK_URL` へ通知するかを判断する (#101)。
+ * `written: false` のときは `reason` で原因 (index 破損 / ストレージエラー) を
+ * 区別できる。呼び出し元はこれを使い分けて通知文言に断定的な誤診断を含めない (#145)。
  */
 export async function writeUrlIndexCAS(
   vault: R2Bucket,
   key: string,
   mutate: (index: UrlIndex) => void,
-): Promise<boolean> {
+): Promise<WriteUrlIndexResult> {
   try {
     for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
       const { index, etag, corrupted } = await readUrlIndex(vault, key)
@@ -93,7 +117,7 @@ export async function writeUrlIndexCAS(
         console.warn(
           `writeUrlIndexCAS: skipping write to "${key}" because the existing index failed to parse`,
         )
-        return false
+        return { written: false, reason: 'corrupted' }
       }
       mutate(index)
       const body = JSON.stringify(index)
@@ -101,7 +125,7 @@ export async function writeUrlIndexCAS(
         httpMetadata: { contentType: 'application/json; charset=utf-8' },
         onlyIf: etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' },
       })
-      if (result) return true // 成功
+      if (result) return { written: true } // 成功
       // null = プリコンディション不一致 (競合)。次のループで再読込・再試行。
     }
     // 最終試行でも競合した場合は可用性優先で無条件 PUT にフォールバック。
@@ -110,15 +134,15 @@ export async function writeUrlIndexCAS(
       console.warn(
         `writeUrlIndexCAS: skipping fallback write to "${key}" because the existing index failed to parse`,
       )
-      return false
+      return { written: false, reason: 'corrupted' }
     }
     mutate(index)
     await vault.put(key, JSON.stringify(index), {
       httpMetadata: { contentType: 'application/json; charset=utf-8' },
     })
-    return true
+    return { written: true }
   } catch (err) {
     console.warn(`writeUrlIndexCAS: vault.get/put failed for "${key}"`, err)
-    return false
+    return { written: false, reason: 'storage-error' }
   }
 }

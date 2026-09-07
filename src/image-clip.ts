@@ -12,7 +12,12 @@ import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
 import { mergeTags } from './tags'
 import { jstIso, jstStamp } from './time'
-import { readUrlIndex, sha1HexBytes, writeUrlIndexCAS } from './url-index'
+import {
+  indexSkipMessage,
+  readUrlIndex,
+  sha1HexBytes,
+  writeUrlIndexCAS,
+} from './url-index'
 
 export type ImageClipResult =
   | { duplicate: true; path: string; embedded: boolean; notePath?: string }
@@ -141,14 +146,15 @@ export async function saveImageClip(
   })
 
   const createdAt = jstIso(now)
-  const indexWritten = await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
-    index[hash] = { path: key, createdAt }
-  })
+  const { written: indexWritten, reason: indexSkipReason } =
+    await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+      index[hash] = { path: key, createdAt }
+    })
   if (!indexWritten && env.NOTIFY_WEBHOOK_URL) {
     waitUntil(
       notifyWebhook(
         env.NOTIFY_WEBHOOK_URL,
-        `[obsidian-clipper] urls.json が壊れているため重複検知インデックスの更新をスキップしました: ${key}`,
+        indexSkipMessage(indexSkipReason, key),
       ),
     )
   }
