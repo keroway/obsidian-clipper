@@ -11,7 +11,11 @@ export function sanitizeForFilename(name: string): string {
 }
 
 function yamlEscape(s: string): string {
-  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+  return `"${s
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')}"`
 }
 
 export function renderNote(opts: {
