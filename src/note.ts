@@ -75,5 +75,5 @@ export function renderNote(opts: {
     parts.push('')
   }
 
-  return parts.join('\n').replace(/\n{3,}/g, '\n\n')
+  return parts.join('\n')
 }
