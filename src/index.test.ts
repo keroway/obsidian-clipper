@@ -351,6 +351,23 @@ describe('renderNote', () => {
     const note = renderNote({ ...baseOpts, note: 'line1\n\n\nline2' })
     expect(note).toContain('> line1\n> \n> \n> line2')
   })
+
+  // issue #144: title の改行と単独行 --- が frontmatter を壊す
+  it('escapes newlines in title so frontmatter is not split by a standalone ---', () => {
+    const note = renderNote({
+      ...baseOpts,
+      title: 'First\n---\nSecond',
+    })
+    const lines = note.split('\n')
+    // frontmatter の終端 --- が本来の 2 行目に現れる (途中のタイトル内 --- で誤検出されない)
+    const closingDash = lines.indexOf('---', 1)
+    const sourceTitleLine = lines.find((l) => l.startsWith('source_title:'))
+    expect(sourceTitleLine).toBeDefined()
+    // frontmatter ブロック内 (--- の手前) に source_title 行が収まっている
+    expect(lines.indexOf(sourceTitleLine as string)).toBeLessThan(closingDash)
+    // 生の改行文字ではなく \n エスケープシーケンスとして出力される
+    expect(sourceTitleLine).toBe('source_title: "First\\n---\\nSecond"')
+  })
 })
 
 // ─────────────────────────── sha1Hex ───────────────────────────
