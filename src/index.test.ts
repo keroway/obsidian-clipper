@@ -1180,6 +1180,45 @@ describe('fetchArticle', () => {
     expect(r.via).toBeUndefined()
     expect(r.err).toContain('404')
   })
+
+  // #141: fetch がヘッダーを返した後、res.text() が停止するケース。
+  // タイムアウトの AbortController がヘッダー受信直後に解除されていると、
+  // 本文読み取りは JINA_TIMEOUT_MS (20s) を過ぎても abort されず fetchArticle が
+  // 完了しない。fake timers で 20s 分の経過をシミュレートし、abort によって
+  // res.text() が reject され、最終的に fetchArticle が失敗として解決することを確認する。
+  it('aborts a stalled response body read once the per-attempt timeout elapses', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const u = input.toString()
+        if (u.startsWith('https://r.jina.ai/')) {
+          const signal = init?.signal as AbortSignal
+          return {
+            ok: true,
+            status: 200,
+            text: () =>
+              new Promise<string>((_resolve, reject) => {
+                signal.addEventListener('abort', () =>
+                  reject(new Error('aborted')),
+                )
+              }),
+          } as unknown as Response
+        }
+        return new Response('nope', { status: 404 })
+      })
+
+      const promise = fetchArticle('https://example.com/stall', jinaOnlyEnv)
+      // JINA_MAX_RETRIES=2 attempts, each with a 20s timeout plus backoff sleeps
+      // in between; advance well past the total to let every attempt settle.
+      await vi.advanceTimersByTimeAsync(120_000)
+      const r = await promise
+
+      expect(r.md).toBe('')
+      expect(r.err).toContain('aborted')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 // ─────────────────── summarizeWithProvider / generateTags ───────────────────

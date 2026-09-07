@@ -41,32 +41,36 @@ export async function fetchArticle(
       if (env.JINA_API_KEY) {
         headers.Authorization = `Bearer ${env.JINA_API_KEY}`
       }
-      const res = await fetchWithTimeout(
+      const { res, clear } = await fetchWithTimeout(
         `https://r.jina.ai/${url}`,
         { headers, cf: { cacheTtl: 0 } },
         JINA_TIMEOUT_MS,
       )
-      if (res.ok) {
-        const md = await res.text()
-        return {
-          md,
-          title: extractJinaTitle(md),
-          via: attempt === 0 ? 'jina' : 'jina-retry',
+      try {
+        if (res.ok) {
+          const md = await res.text()
+          return {
+            md,
+            title: extractJinaTitle(md),
+            via: attempt === 0 ? 'jina' : 'jina-retry',
+          }
         }
-      }
-      lastErr = `jina ${res.status}`
-      // リトライ対象ステータスかつ残り回数があるときだけ待って再試行
-      if (JINA_RETRY_STATUS.has(res.status)) {
-        retryableFailure = true
-        if (attempt < JINA_MAX_RETRIES) {
-          const wait = retryDelayMs(res, attempt)
-          await sleep(wait)
-          continue
+        lastErr = `jina ${res.status}`
+        // リトライ対象ステータスかつ残り回数があるときだけ待って再試行
+        if (JINA_RETRY_STATUS.has(res.status)) {
+          retryableFailure = true
+          if (attempt < JINA_MAX_RETRIES) {
+            const wait = retryDelayMs(res, attempt)
+            await sleep(wait)
+            continue
+          }
+        } else {
+          retryableFailure = false
         }
-      } else {
-        retryableFailure = false
+        break
+      } finally {
+        clear()
       }
-      break
     } catch (e) {
       lastErr = `jina ${(e as Error).message}`
       retryableFailure = true
@@ -119,17 +123,22 @@ function retryDelayMs(res: Response | null, attempt: number): number {
   return 500 * 2 ** attempt
 }
 
+// レスポンス本文の読み取り (res.text() / res.json()) は呼び出し側が行うため、
+// abort タイマーはヘッダー受信後も維持する。呼び出し側は本文読み取り完了後に
+// 必ず `clear()` を呼ぶこと (#141: 本文読み取り中の停止に対して abort させる)。
 async function fetchWithTimeout(
   input: string,
   init: RequestInit,
   timeoutMs: number,
-): Promise<Response> {
+): Promise<{ res: Response; clear: () => void }> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(input, { ...init, signal: controller.signal })
-  } finally {
+    const res = await fetch(input, { ...init, signal: controller.signal })
+    return { res, clear: () => clearTimeout(timer) }
+  } catch (e) {
     clearTimeout(timer)
+    throw e
   }
 }
 
@@ -138,7 +147,7 @@ async function fetchViaBrowserRendering(
   env: Bindings,
 ): Promise<string> {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/markdown`
-  const res = await fetchWithTimeout(
+  const { res, clear } = await fetchWithTimeout(
     endpoint,
     {
       method: 'POST',
@@ -150,19 +159,23 @@ async function fetchViaBrowserRendering(
     },
     BROWSER_RENDERING_TIMEOUT_MS,
   )
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+  try {
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+    }
+    // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
+    const data = (await res.json()) as {
+      success?: boolean
+      result?: string | { markdown?: string }
+      errors?: unknown
+    }
+    if (typeof data.result === 'string') return data.result.trim()
+    if (data.result && typeof data.result.markdown === 'string') {
+      return data.result.markdown.trim()
+    }
+    return ''
+  } finally {
+    clear()
   }
-  // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
-  const data = (await res.json()) as {
-    success?: boolean
-    result?: string | { markdown?: string }
-    errors?: unknown
-  }
-  if (typeof data.result === 'string') return data.result.trim()
-  if (data.result && typeof data.result.markdown === 'string') {
-    return data.result.markdown.trim()
-  }
-  return ''
 }
