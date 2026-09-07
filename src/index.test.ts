@@ -339,6 +339,18 @@ describe('renderNote', () => {
     expect(note).not.toContain('source_url:')
     expect(note).not.toContain('<undefined>')
   })
+
+  it('preserves consecutive blank lines inside body content as-is (issue #140)', () => {
+    const body = '```text\nfirst\n\n\nlast\n```'
+    const note = renderNote({ ...baseOpts, body })
+    const savedBody = note.split('## 本文\n')[1].trimEnd()
+    expect(savedBody).toBe(body)
+  })
+
+  it('preserves consecutive blank lines inside note/memo content as-is', () => {
+    const note = renderNote({ ...baseOpts, note: 'line1\n\n\nline2' })
+    expect(note).toContain('> line1\n> \n> \n> line2')
+  })
 })
 
 // ─────────────────────────── sha1Hex ───────────────────────────
