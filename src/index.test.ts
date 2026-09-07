@@ -30,6 +30,7 @@ import {
 } from './tags'
 import { normalizeUrl } from './url'
 import {
+  indexSkipMessage,
   readUrlIndex,
   sha1Hex,
   sha1HexBytes,
@@ -601,7 +602,7 @@ describe('writeUrlIndexCAS', () => {
   const indexKey = 'test-cas-index.json'
 
   it('writes a new index when none exists', async () => {
-    const written = await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
+    const { written } = await writeUrlIndexCAS(env.VAULT, indexKey, (index) => {
       index.abc = { path: 'Inbox/a.md', createdAt: '2026-01-01T00:00:00+09:00' }
     })
     expect(written).toBe(true)
@@ -760,7 +761,7 @@ describe('writeUrlIndexCAS', () => {
       // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only get/put are exercised
     } as any
 
-    const wrote = await writeUrlIndexCAS(
+    const { written: wrote } = await writeUrlIndexCAS(
       alwaysConflictingVault,
       fallbackKey,
       (index) => {
@@ -786,21 +787,26 @@ describe('writeUrlIndexCAS', () => {
     await env.VAULT.put(corruptKey, '{ this is not valid json')
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const written = await writeUrlIndexCAS(env.VAULT, corruptKey, (index) => {
-      index.new = {
-        path: 'Inbox/new.md',
-        createdAt: '2026-01-01T00:00:00+09:00',
-      }
-    })
+    const { written, reason } = await writeUrlIndexCAS(
+      env.VAULT,
+      corruptKey,
+      (index) => {
+        index.new = {
+          path: 'Inbox/new.md',
+          createdAt: '2026-01-01T00:00:00+09:00',
+        }
+      },
+    )
 
     expect(written).toBe(false)
+    expect(reason).toBe('corrupted')
     const stored = await env.VAULT.get(corruptKey)
     expect(await stored?.text()).toBe('{ this is not valid json')
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
-  it('returns false instead of throwing when vault.get rejects (#132)', async () => {
+  it('returns storage-error instead of throwing when vault.get rejects (#132, #145)', async () => {
     const key = 'test-cas-index-get-throws.json'
     const throwingVault = {
       ...env.VAULT,
@@ -811,19 +817,24 @@ describe('writeUrlIndexCAS', () => {
     } as any
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const written = await writeUrlIndexCAS(throwingVault, key, (index) => {
-      index.new = {
-        path: 'Inbox/new.md',
-        createdAt: '2026-01-01T00:00:00+09:00',
-      }
-    })
+    const { written, reason } = await writeUrlIndexCAS(
+      throwingVault,
+      key,
+      (index) => {
+        index.new = {
+          path: 'Inbox/new.md',
+          createdAt: '2026-01-01T00:00:00+09:00',
+        }
+      },
+    )
 
     expect(written).toBe(false)
+    expect(reason).toBe('storage-error')
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
-  it('returns false instead of throwing when vault.put rejects (#132)', async () => {
+  it('returns storage-error instead of throwing when vault.put rejects (#132, #145)', async () => {
     const key = 'test-cas-index-put-throws.json'
     const throwingVault = {
       ...env.VAULT,
@@ -835,14 +846,19 @@ describe('writeUrlIndexCAS', () => {
     } as any
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const written = await writeUrlIndexCAS(throwingVault, key, (index) => {
-      index.new = {
-        path: 'Inbox/new.md',
-        createdAt: '2026-01-01T00:00:00+09:00',
-      }
-    })
+    const { written, reason } = await writeUrlIndexCAS(
+      throwingVault,
+      key,
+      (index) => {
+        index.new = {
+          path: 'Inbox/new.md',
+          createdAt: '2026-01-01T00:00:00+09:00',
+        }
+      },
+    )
 
     expect(written).toBe(false)
+    expect(reason).toBe('storage-error')
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
@@ -2003,9 +2019,7 @@ describe('POST /clip - auto tagging', () => {
       })
       expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
       expect(
-        notified.some((b) =>
-          b.includes('重複検知インデックスの更新をスキップ'),
-        ),
+        notified.some((b) => b.includes(indexSkipMessage('corrupted', ''))),
         `index 破損の通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
 
@@ -2020,6 +2034,65 @@ describe('POST /clip - auto tagging', () => {
       } else {
         await env.VAULT.put(indexKey, previousBody)
       }
+    }
+  })
+
+  /// #145: index への put だけが reject する (JSON 破損ではなくストレージ書き込み
+  /// 失敗) 場合、通知文言が「壊れている」と誤って断定しないこと。
+  it('notifies the webhook with a storage-error message (not a corruption claim) when the index put rejects', async () => {
+    const testEnv = env as typeof env & { NOTIFY_WEBHOOK_URL?: string }
+    const original = testEnv.NOTIFY_WEBHOOK_URL
+    const indexKey = 'Inbox/.index/urls.json'
+    const originalPut = env.VAULT.put.bind(env.VAULT)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: T\n\nBody content here.', { status: 200 })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+    vi.spyOn(env.VAULT, 'put').mockImplementation(((
+      key: string,
+      value: unknown,
+      options?: unknown,
+    ) => {
+      if (key === indexKey) {
+        throw new Error('simulated R2 PUT unavailable')
+      }
+      // biome-ignore lint/suspicious/noExplicitAny: forwarding to the real R2Bucket.put overload set
+      return (originalPut as any)(key, value, options)
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only put is exercised
+    }) as any)
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/index-storage-error-notify-1',
+        }),
+      })
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
+      expect(
+        notified.some((b) => b.includes(indexSkipMessage('storage-error', ''))),
+        `ストレージエラーの通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+      expect(notified.some((b) => b.includes('壊れている'))).toBe(false)
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = original
+      warnSpy.mockRestore()
+      vi.mocked(env.VAULT.put).mockRestore()
     }
   })
 
