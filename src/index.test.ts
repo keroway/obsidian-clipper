@@ -1400,6 +1400,50 @@ describe('summarizeWithProvider', () => {
     // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
     expect(run).toHaveBeenCalledTimes(1)
   })
+
+  // #152: response 欠落/空文字は例外ではなく正常終了として素通りしていたため、
+  // 呼び出し側 (index.ts) の catch に繋がらず webhook 通知・フォールバックが
+  // どちらも発火しなかった。空応答を明示的な失敗として throw することを確認する。
+  it('throws when workers-ai returns an empty summary', async () => {
+    const { env: testEnv } = workersAiEnv('   ')
+    await expect(
+      summarizeWithProvider(testEnv, 'body text', 'Title'),
+    ).rejects.toThrow(/empty summary/)
+  })
+
+  it('falls back to workers-ai when anthropic returns an empty summary', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({ content: [] }), { status: 200 })
+    })
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('fallback summary')
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws when anthropic returns empty and the workers-ai fallback is also empty', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({ content: [] }), { status: 200 })
+    })
+
+    const { env } = workersAiEnv('')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+
+    await expect(
+      summarizeWithProvider(testEnv, 'body text', 'Title'),
+    ).rejects.toThrow(/empty summary/)
+  })
 })
 
 describe('generateTags', () => {
@@ -2167,6 +2211,67 @@ describe('POST /clip - auto tagging', () => {
       testEnv.NOTIFY_WEBHOOK_URL = original
       warnSpy.mockRestore()
       vi.mocked(env.VAULT.put).mockRestore()
+    }
+  })
+
+  /// #152: 要約プロバイダが空応答を返したとき、以前は summarized:false のまま
+  /// HTTP 200/ok:true で無音終了していた (webhook 通知も workers-ai へのフォールバックも無し)。
+  /// 空応答を失敗として扱い、既存の要約失敗通知経路に繋がることを確認する。
+  it('notifies the webhook when the summary provider returns an empty response', async () => {
+    const testEnv = env as typeof env & {
+      NOTIFY_WEBHOOK_URL?: string
+      ENABLE_SUMMARY?: string
+    }
+    const originalNotify = testEnv.NOTIFY_WEBHOOK_URL
+    const originalEnableSummary = testEnv.ENABLE_SUMMARY
+    const originalAi = testEnv.AI
+    // 実 Workers AI ではなく、要約テキストを含まない応答を返すだけの stub を注入する
+    // (wrangler.test.jsonc に AI binding は無いので、実行環境からは常に undefined)。
+    testEnv.AI = {
+      run: async () => ({ response: '' }),
+    } as unknown as typeof testEnv.AI
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response(`Title: T\n\n${'article body text '.repeat(20)}`, {
+          status: 200,
+        })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    testEnv.ENABLE_SUMMARY = 'true'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/empty-summary-notify-1',
+        }),
+      })
+      const body = (await res.json()) as { ok: boolean; summarized: boolean }
+      expect(body.ok).toBe(true)
+      expect(body.summarized).toBe(false)
+      expect(
+        notified.some((b) => b.includes('要約失敗')),
+        `要約失敗の通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = originalNotify
+      testEnv.ENABLE_SUMMARY = originalEnableSummary
+      testEnv.AI = originalAi
+      warnSpy.mockRestore()
     }
   })
 
