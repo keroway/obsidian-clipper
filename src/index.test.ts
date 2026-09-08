@@ -202,6 +202,11 @@ describe('sanitizeForFilename', () => {
       'How to use Cloudflare Workers',
     )
   })
+
+  it('removes NUL and other control characters', () => {
+    expect(sanitizeForFilename('a\x00b')).toBe('a b')
+    expect(sanitizeForFilename('a\x01\x1fb')).toBe('a b')
+  })
 })
 
 // ─────────────────────────── renderNote ───────────────────────────
@@ -368,6 +373,20 @@ describe('renderNote', () => {
     expect(lines.indexOf(sourceTitleLine as string)).toBeLessThan(closingDash)
     // 生の改行文字ではなく \n エスケープシーケンスとして出力される
     expect(sourceTitleLine).toBe('source_title: "First\\n---\\nSecond"')
+  })
+
+  // issue #148: NUL が frontmatter に素通しされ YAML 解析が壊れる
+  it('escapes NUL and other control characters in title as \\xNN', () => {
+    const note = renderNote({
+      ...baseOpts,
+      title: 'a\x00b',
+    })
+    const lines = note.split('\n')
+    const sourceTitleLine = lines.find((l) => l.startsWith('source_title:'))
+    expect(sourceTitleLine).toBe('source_title: "a\\x00b"')
+    // frontmatter ブロック (--- で挟まれた部分) に生の NUL が残っていない
+    const closingDash = lines.indexOf('---', 1)
+    expect(lines.slice(0, closingDash + 1).join('\n')).not.toContain('\x00')
   })
 })
 
