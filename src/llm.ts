@@ -19,22 +19,28 @@ export async function summarizeWithProvider(
   if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
     const anthropicModel = env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL
     try {
-      return await summarizeWithAnthropic(
+      const text = await summarizeWithAnthropic(
         env.ANTHROPIC_API_KEY,
         anthropicModel,
         md,
         title,
       )
+      if (!text) throw new Error('anthropic returned empty summary')
+      return text
     } catch (e) {
       // Anthropic 失敗時は 1 回だけ workers-ai にフォールバック (ループは作らない)
       console.warn(
         'anthropic summarize failed, falling back to workers-ai',
         (e as Error).message,
       )
-      return await summarize(env.AI, workersAiModel, md, title)
+      const fallback = await summarize(env.AI, workersAiModel, md, title)
+      if (!fallback) throw new Error('workers-ai returned empty summary')
+      return fallback
     }
   }
-  return await summarize(env.AI, workersAiModel, md, title)
+  const result = await summarize(env.AI, workersAiModel, md, title)
+  if (!result) throw new Error('workers-ai returned empty summary')
+  return result
 }
 
 async function summarize(
