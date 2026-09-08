@@ -1,5 +1,6 @@
-// Windows / macOS / Obsidian で扱いにくい文字
-const INVALID_FILENAME_RE = /[\\/:*?"<>|[\]#^`]/g
+// Windows / macOS / Obsidian で扱いにくい文字 + 制御文字 (NUL 等)
+// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL 等の制御文字をファイル名から除去するために意図的に含める
+const INVALID_FILENAME_RE = /[\\/:*?"<>|[\]#^`\x00-\x1f\x7f]/g
 
 export function sanitizeForFilename(name: string): string {
   return name
@@ -10,12 +11,25 @@ export function sanitizeForFilename(name: string): string {
     .replace(/^[. ]+|[. ]+$/g, '')
 }
 
+// YAML 二重引用符スカラー内で安全な制御文字エスケープ (\n \r \t は専用エスケープ、
+// それ以外の C0 制御文字と DEL は \xNN)
 function yamlEscape(s: string): string {
   return `"${s
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n')}"`
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: YAML スカラー内で制御文字を安全にエスケープするために意図的に含める
+    .replace(/[\x00-\x1f\x7f]/g, (c) => {
+      switch (c) {
+        case '\n':
+          return '\\n'
+        case '\r':
+          return '\\r'
+        case '\t':
+          return '\\t'
+        default:
+          return `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`
+      }
+    })}"`
 }
 
 export function renderNote(opts: {
