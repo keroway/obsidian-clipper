@@ -1192,6 +1192,61 @@ describe('fetchArticle', () => {
     expect(r.err).toBeTruthy()
   })
 
+  it('treats jina 200 with empty body as a failure, not success (#149)', async () => {
+    let calls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        calls++
+        return new Response('', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/empty', jinaOnlyEnv)
+    expect(calls).toBe(1)
+    expect(r.md).toBe('')
+    expect(r.via).toBeUndefined()
+    expect(r.err).toContain('empty')
+  })
+
+  it('treats jina 200 with whitespace-only body as a failure (#149)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('   \n\t  ', { status: 200 })
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/whitespace', jinaOnlyEnv)
+    expect(r.md).toBe('')
+    expect(r.err).toContain('empty')
+  })
+
+  it('does not fall back to browser-rendering on jina empty body (not a retryable status)', async () => {
+    let brCalled = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('', { status: 200 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        brCalled = true
+        return new Response(
+          JSON.stringify({ success: true, result: 'Title: BR\n\nFrom BR.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/empty-br', brEnv)
+    expect(brCalled).toBe(false)
+    expect(r.md).toBe('')
+    expect(r.err).toContain('empty')
+  })
+
   it('does not retry on non-retryable status (404)', async () => {
     let calls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
