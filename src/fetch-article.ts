@@ -49,6 +49,14 @@ export async function fetchArticle(
       try {
         if (res.ok) {
           const md = await res.text()
+          if (md.trim() === '') {
+            // 空本文の 200 は成功扱いにしない (#149): 失敗説明・通知経路に
+            // 接続するため err を設定して抜ける。429/503 ではないので
+            // retryableFailure は立てず、Browser Rendering フォールバックは
+            // 発火させない (ADR 0007 の対象条件外)。
+            lastErr = 'jina empty body'
+            break
+          }
           return {
             md,
             title: extractJinaTitle(md),
