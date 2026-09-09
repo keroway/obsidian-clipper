@@ -1247,6 +1247,38 @@ describe('fetchArticle', () => {
     expect(r.err).toContain('empty')
   })
 
+  it('does not fall back to browser-rendering when a 503 retry is followed by an empty body (#153)', async () => {
+    let brCalled = false
+    let jinaCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        jinaCalls++
+        if (jinaCalls === 1) {
+          return new Response('error', {
+            status: 503,
+            headers: { 'Retry-After': '0' },
+          })
+        }
+        return new Response('', { status: 200 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        brCalled = true
+        return new Response(
+          JSON.stringify({ success: true, result: 'Title: BR\n\nFrom BR.' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/retry-then-empty', brEnv)
+    expect(jinaCalls).toBe(2)
+    expect(brCalled).toBe(false)
+    expect(r.md).toBe('')
+    expect(r.err).toContain('empty')
+  })
+
   it('does not retry on non-retryable status (404)', async () => {
     let calls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
