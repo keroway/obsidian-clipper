@@ -53,8 +53,11 @@ export async function fetchArticle(
             // 空本文の 200 は成功扱いにしない (#149): 失敗説明・通知経路に
             // 接続するため err を設定して抜ける。429/503 ではないので
             // retryableFailure は立てず、Browser Rendering フォールバックは
-            // 発火させない (ADR 0007 の対象条件外)。
+            // 発火させない (ADR 0007 の対象条件外)。前試行の503リトライで
+            // retryableFailure が立っていた場合も、最終結果が空本文なら
+            // 解除する (#153: 試行間の状態持ち越しでフォールバックが誤発火する)。
             lastErr = 'jina empty body'
+            retryableFailure = false
             break
           }
           return {
