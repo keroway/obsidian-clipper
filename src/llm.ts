@@ -5,7 +5,7 @@ import {
   SUMMARY_MAX_TOKENS,
   SUMMARY_SYSTEM_PROMPT,
 } from './prompts'
-import { parseTagList } from './tags'
+import { hasValidTag, parseTagList } from './tags'
 
 const ANTHROPIC_DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
 const ANTHROPIC_TIMEOUT_MS = 30_000
@@ -94,8 +94,13 @@ export async function generateTags(
         userPrompt,
         60,
       )
-      return parseTagList(text)
+      const tags = parseTagList(text)
+      if (!hasValidTag(tags))
+        throw new Error('anthropic returned no usable tags')
+      return tags
     } catch (e) {
+      // 要約と同じく Anthropic 失敗時は 1 回だけ workers-ai にフォールバックする
+      // (空応答・正規化後に有効タグが残らない場合も失敗として扱う)。
       console.warn(
         'anthropic auto-tag failed, falling back to workers-ai',
         (e as Error).message,
@@ -113,7 +118,9 @@ export async function generateTags(
       max_tokens: 60,
     } as never,
   )) as { response?: string }
-  return parseTagList((r?.response ?? '').toString())
+  const tags = parseTagList((r?.response ?? '').toString())
+  if (!hasValidTag(tags)) throw new Error('workers-ai returned no usable tags')
+  return tags
 }
 
 // Anthropic Messages API の汎用 1 往復呼び出し。system/user/max_tokens を受け取り

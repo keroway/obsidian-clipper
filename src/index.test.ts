@@ -1546,6 +1546,50 @@ describe('generateTags', () => {
     // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
     expect(run).toHaveBeenCalledTimes(1)
   })
+
+  // #158: 空応答・記号のみの応答が正常終了扱いになると、呼び出し側の
+  // .catch (失敗通知経路) に到達せずタグ生成失敗が握り潰される。
+  it('throws when workers-ai returns an empty response', async () => {
+    const { env: testEnv } = workersAiEnv('')
+    await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow()
+  })
+
+  it('throws when workers-ai returns a punctuation-only response', async () => {
+    const { env: testEnv } = workersAiEnv('!!!')
+    await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow()
+  })
+
+  it('falls back to workers-ai when anthropic returns an empty response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({ content: [] }), { status: 200 })
+    })
+
+    const { env, run } = workersAiEnv('fallbackTag')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const tags = await generateTags(testEnv, 'body text', 'Title')
+
+    expect(tags).toEqual(['fallbackTag'])
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws when both anthropic and the workers-ai fallback return no usable tags', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({ content: [] }), { status: 200 })
+    })
+
+    const { env } = workersAiEnv('')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+
+    await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow()
+  })
 })
 
 // ─────────────────────────── notifyWebhook ───────────────────────────
