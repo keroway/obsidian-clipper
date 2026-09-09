@@ -96,6 +96,12 @@ export function hostTagsFor(url: string, env?: Bindings): string[] {
   return tags
 }
 
+// normalizeTag 後に1件でも空文字でないタグが残るか判定する。
+// LLM 応答が空文字・記号のみ等で実質タグ無しになったケースを検知するために使う。
+export function hasValidTag(tags: string[]): boolean {
+  return tags.some((t) => normalizeTag(t) !== '')
+}
+
 export function parseTagList(s: string): string[] {
   return s
     .split(/[,\n、]/)
