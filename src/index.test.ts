@@ -18,6 +18,7 @@ import {
 import type { Bindings } from './bindings'
 import { classifyJsonBody, detectContentKind } from './clip-input'
 import { fetchArticle } from './fetch-article'
+import app from './index'
 import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
@@ -1964,6 +1965,68 @@ describe('POST /clip - duplicate detection', () => {
     expect(json3.ok).toBe(false)
     expect(json3.duplicate).toBe(true)
     expect(json3.path).toBe(json2.path)
+  })
+
+  it('saves the note even if the pre-save duplicate-index GET fails when refresh=1 (#160)', async () => {
+    mockJina()
+    const url = 'https://example.com/refresh-index-get-fails-1'
+    const throwingVault = {
+      ...env.VAULT,
+      get: async () => {
+        throw new Error('simulated index read failure')
+      },
+      put: env.VAULT.put.bind(env.VAULT),
+      head: env.VAULT.head.bind(env.VAULT),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only put/head are exercised by the save path
+    } as any
+
+    const res = await app.request(
+      `http://example.com/clip?refresh=1`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url }),
+      },
+      { ...env, VAULT: throwingVault },
+      { waitUntil() {} } as unknown as ExecutionContext,
+    )
+
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { ok: boolean }
+    expect(json.ok).toBe(true)
+  })
+
+  it('does not skip the duplicate-index read when refresh is unset, even if it would throw', async () => {
+    mockJina()
+    const url = 'https://example.com/no-refresh-index-get-fails-1'
+    const throwingVault = {
+      ...env.VAULT,
+      get: async () => {
+        throw new Error('simulated index read failure')
+      },
+      put: env.VAULT.put.bind(env.VAULT),
+      head: env.VAULT.head.bind(env.VAULT),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only get/put/head are exercised by the duplicate-check path
+    } as any
+
+    const res = await app.request(
+      `http://example.com/clip`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url }),
+      },
+      { ...env, VAULT: throwingVault },
+      { waitUntil() {} } as unknown as ExecutionContext,
+    )
+
+    expect(res.status).toBe(500)
   })
 
   it('allows re-clipping when the indexed file no longer exists in R2 (ADR 0010)', async () => {

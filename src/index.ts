@@ -172,13 +172,18 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   const indexKey = `${prefix}${folder}/.index/urls.json`
   const hash = await sha1Hex(url)
 
-  const { index: urlIndex } = await readUrlIndex(c.env.VAULT, indexKey)
-  if (!refresh && urlIndex[hash]) {
-    // index のパスが実際に R2 上に存在する場合のみ重複とみなす。
-    // Obsidian 側で Inbox から移動/削除済みなら新規保存を許可する (ADR 0010)。
-    const existing = await c.env.VAULT.head(urlIndex[hash].path)
-    if (existing) {
-      return c.json({ ok: false, duplicate: true, path: urlIndex[hash].path })
+  // refresh=1 は重複判定そのものを無視する指定なので、判定用の読み取りも
+  // 省略する。読み取りを省略しないと index の GET 失敗がそのまま 500 に
+  // なり、本文取得・保存に到達できなかった (#160)。
+  if (!refresh) {
+    const { index: urlIndex } = await readUrlIndex(c.env.VAULT, indexKey)
+    if (urlIndex[hash]) {
+      // index のパスが実際に R2 上に存在する場合のみ重複とみなす。
+      // Obsidian 側で Inbox から移動/削除済みなら新規保存を許可する (ADR 0010)。
+      const existing = await c.env.VAULT.head(urlIndex[hash].path)
+      if (existing) {
+        return c.json({ ok: false, duplicate: true, path: urlIndex[hash].path })
+      }
     }
   }
 
