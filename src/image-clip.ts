@@ -116,19 +116,23 @@ export async function saveImageClip(
     return notePath
   }
 
-  const { index: urlIndex } = await readUrlIndex(env.VAULT, indexKey)
-  if (!refresh && urlIndex[hash]) {
-    const existingPath = urlIndex[hash].path
-    const existing = await env.VAULT.head(existingPath)
-    if (existing) {
-      if (!wantEmbed) {
-        return { duplicate: true, path: existingPath, embedded: false }
+  // refresh=1 は重複判定そのものを無視する指定なので、判定用の読み取りも
+  // 省略する (#160)。
+  if (!refresh) {
+    const { index: urlIndex } = await readUrlIndex(env.VAULT, indexKey)
+    if (urlIndex[hash]) {
+      const existingPath = urlIndex[hash].path
+      const existing = await env.VAULT.head(existingPath)
+      if (existing) {
+        if (!wantEmbed) {
+          return { duplicate: true, path: existingPath, embedded: false }
+        }
+        const embedTarget = existingPath.startsWith(prefix)
+          ? existingPath.slice(prefix.length)
+          : existingPath
+        const notePath = await buildEmbedNote(new Date(), embedTarget)
+        return { duplicate: true, path: existingPath, embedded: true, notePath }
       }
-      const embedTarget = existingPath.startsWith(prefix)
-        ? existingPath.slice(prefix.length)
-        : existingPath
-      const notePath = await buildEmbedNote(new Date(), embedTarget)
-      return { duplicate: true, path: existingPath, embedded: true, notePath }
     }
   }
 
