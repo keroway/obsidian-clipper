@@ -167,6 +167,168 @@ function deriveTitle(md: string): string | undefined {
   return md.match(/^#\s+(.+)$/m)?.[1]?.trim()
 }
 
+// モデル1回分の実行結果を4分類のどれかに落とす。空/空白のみの要約は
+// 「日本語のみ」の成功扱いにせず失敗として扱う (#164)。
+type ResultKind = 'error' | 'empty' | 'foreign' | 'ok'
+
+function classifyResult(r: ModelResult): ResultKind {
+  if (r.error) return 'error'
+  if (r.summary.trim().length === 0) return 'empty'
+  if (r.foreign.length > 0) return 'foreign'
+  return 'ok'
+}
+
+// モデルごとの集計。executed (実行件数) / validEvaluated (有効要約の評価件数) を
+// 分母として明示的に分けることで、urls.length を分母に使う誤集計 (#164) を防ぐ。
+type ModelAggregate = {
+  executed: number
+  errors: number
+  emptySummaries: number
+  validEvaluated: number
+  foreignArticles: number
+  totalMs: number
+}
+
+function newAggregate(): ModelAggregate {
+  return {
+    executed: 0,
+    errors: 0,
+    emptySummaries: 0,
+    validEvaluated: 0,
+    foreignArticles: 0,
+    totalMs: 0,
+  }
+}
+
+function recordResult(a: ModelAggregate, r: ModelResult): ResultKind {
+  a.executed++
+  a.totalMs += r.latencyMs
+  const kind = classifyResult(r)
+  if (kind === 'error') {
+    a.errors++
+  } else if (kind === 'empty') {
+    a.emptySummaries++
+  } else {
+    a.validEvaluated++
+    if (kind === 'foreign') a.foreignArticles++
+  }
+  return kind
+}
+
+function formatAggregateRow(
+  model: string,
+  totalUrls: number,
+  a: ModelAggregate,
+): string {
+  const notRun = totalUrls - a.executed
+  const avgLatency =
+    a.executed > 0 ? `${Math.round(a.totalMs / a.executed)}ms` : 'N/A(未実行)'
+  const foreignRate =
+    a.validEvaluated > 0
+      ? `${a.foreignArticles}/${a.validEvaluated}`
+      : 'N/A・未評価'
+  return `| \`${model}\` | ${a.executed}/${totalUrls} | ${notRun} | ${a.errors} | ${a.emptySummaries} | ${a.validEvaluated} | ${avgLatency} | ${foreignRate} |`
+}
+
+type ReportDeps = {
+  fetchMarkdown: (url: string) => Promise<string>
+  runModel: (
+    model: string,
+    md: string,
+    title: string | undefined,
+  ) => Promise<ModelResult>
+}
+
+// main() から環境変数解決 / 引数解析を切り離した本体。テストからは
+// fetchMarkdown / runModel をモックして注入できる (#164 の回帰検証)。
+async function buildReport(
+  urls: string[],
+  models: string[],
+  deps: ReportDeps,
+): Promise<string> {
+  const out: string[] = []
+  out.push('# Workers AI 要約モデル比較レポート')
+  out.push('')
+  out.push(`- 生成: ${new Date().toISOString()}`)
+  out.push(`- 候補モデル: ${models.map((m) => `\`${m}\``).join(', ')}`)
+  out.push(
+    `- システムプロンプト / 抜粋上限 / max_tokens は src/index.ts と同一`,
+  )
+  out.push('')
+
+  const agg = new Map<string, ModelAggregate>()
+  for (const m of models) agg.set(m, newAggregate())
+  let fetchFailures = 0
+
+  for (const url of urls) {
+    console.error(`fetching: ${url}`)
+    let md = ''
+    try {
+      md = await deps.fetchMarkdown(url)
+    } catch (e) {
+      fetchFailures++
+      out.push(`## ${url}`)
+      out.push('')
+      out.push(`> ⚠ 本文取得失敗: ${(e as Error).message}`)
+      out.push('')
+      continue
+    }
+    const title = deriveTitle(md)
+
+    out.push(`## ${title ?? url}`)
+    out.push('')
+    out.push(`<${url}>`)
+    out.push('')
+
+    for (const model of models) {
+      console.error(`  running: ${model}`)
+      const r = await deps.runModel(model, md, title)
+      // biome-ignore lint/style/noNonNullAssertion: key guaranteed by agg initialization above
+      const a = agg.get(model)!
+      const kind = recordResult(a, r)
+
+      const flag =
+        kind === 'error'
+          ? `❌ error: ${r.error}`
+          : kind === 'empty'
+            ? '❌ 空要約'
+            : kind === 'foreign'
+              ? `⚠ 他言語混入: ${r.foreign.join(', ')}`
+              : '✅ 日本語のみ'
+      out.push(`### \`${model}\` — ${r.latencyMs}ms — ${flag}`)
+      out.push('')
+      out.push(r.summary ? `> ${r.summary.replace(/\n/g, '\n> ')}` : '> (空)')
+      out.push('')
+    }
+  }
+
+  out.push('## 集計')
+  out.push('')
+  out.push(`- 本文取得失敗: ${fetchFailures}/${urls.length}`)
+  const allInconclusive = models.every(
+    (m) => (agg.get(m) as ModelAggregate).validEvaluated === 0,
+  )
+  if (allInconclusive) {
+    out.push(
+      '- ⚠ 全モデルで有効要約の評価件数が0件のため、比較は不成立 (本文取得失敗またはモデル失敗/空要約のみ)。',
+    )
+  }
+  out.push('')
+  out.push(
+    '| モデル | 実行 | 未実行 | 失敗 | 空要約 | 有効評価 | 平均レイテンシ(実行時) | 他言語混入(有効評価内) |',
+  )
+  out.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
+  for (const m of models) {
+    out.push(formatAggregateRow(m, urls.length, agg.get(m) as ModelAggregate))
+  }
+  out.push('')
+  out.push(
+    '> コスト観点は Workers AI 価格表 (https://developers.cloudflare.com/workers-ai/platform/pricing/) と照合して別途記入すること。',
+  )
+
+  return out.join('\n')
+}
+
 async function main() {
   const accountId = process.env.CF_ACCOUNT_ID
   const token = process.env.CF_API_TOKEN
@@ -192,82 +354,19 @@ async function main() {
     )
   }
 
-  const out: string[] = []
-  out.push('# Workers AI 要約モデル比較レポート')
-  out.push('')
-  out.push(`- 生成: ${new Date().toISOString()}`)
-  out.push(`- 候補モデル: ${models.map((m) => `\`${m}\``).join(', ')}`)
-  out.push(
-    `- システムプロンプト / 抜粋上限 / max_tokens は src/index.ts と同一`,
-  )
-  out.push('')
+  const report = await buildReport(urls, models, {
+    fetchMarkdown: (url) => fetchMarkdown(url, jinaKey),
+    runModel: (model, md, title) =>
+      runModel(accountId, token, model, md, title),
+  })
 
-  // 集計用: モデルごとの混入記事数と平均レイテンシ
-  const agg = new Map<
-    string,
-    { foreignArticles: number; totalMs: number; errors: number }
-  >()
-  for (const m of models)
-    agg.set(m, { foreignArticles: 0, totalMs: 0, errors: 0 })
-
-  for (const url of urls) {
-    console.error(`fetching: ${url}`)
-    let md = ''
-    try {
-      md = await fetchMarkdown(url, jinaKey)
-    } catch (e) {
-      out.push(`## ${url}`)
-      out.push('')
-      out.push(`> ⚠ 本文取得失敗: ${(e as Error).message}`)
-      out.push('')
-      continue
-    }
-    const title = deriveTitle(md)
-
-    out.push(`## ${title ?? url}`)
-    out.push('')
-    out.push(`<${url}>`)
-    out.push('')
-
-    for (const model of models) {
-      console.error(`  running: ${model}`)
-      const r = await runModel(accountId, token, model, md, title)
-      // biome-ignore lint/style/noNonNullAssertion: key guaranteed by agg initialization above
-      const a = agg.get(model)!
-      a.totalMs += r.latencyMs
-      if (r.error) a.errors++
-      if (r.foreign.length > 0) a.foreignArticles++
-
-      const flag = r.error
-        ? `❌ error: ${r.error}`
-        : r.foreign.length > 0
-          ? `⚠ 他言語混入: ${r.foreign.join(', ')}`
-          : '✅ 日本語のみ'
-      out.push(`### \`${model}\` — ${r.latencyMs}ms — ${flag}`)
-      out.push('')
-      out.push(r.summary ? `> ${r.summary.replace(/\n/g, '\n> ')}` : '> (空)')
-      out.push('')
-    }
-  }
-
-  out.push('## 集計')
-  out.push('')
-  out.push('| モデル | 平均レイテンシ | 他言語混入記事 | エラー |')
-  out.push('| --- | --- | --- | --- |')
-  for (const m of models) {
-    // biome-ignore lint/style/noNonNullAssertion: key guaranteed by agg initialization above
-    const a = agg.get(m)!
-    const avg = urls.length ? Math.round(a.totalMs / urls.length) : 0
-    out.push(
-      `| \`${m}\` | ${avg}ms | ${a.foreignArticles}/${urls.length} | ${a.errors} |`,
-    )
-  }
-  out.push('')
-  out.push(
-    '> コスト観点は Workers AI 価格表 (https://developers.cloudflare.com/workers-ai/platform/pricing/) と照合して別途記入すること。',
-  )
-
-  console.log(out.join('\n'))
+  console.log(report)
 }
 
-main()
+// bun scripts/compare-summary-models.ts で直接実行されたときだけ main() を走らせる。
+// テストからの import では実行しない。
+if (import.meta.main) {
+  main()
+}
+
+export { buildReport, classifyResult, type ModelResult }
