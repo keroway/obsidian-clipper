@@ -2772,6 +2772,42 @@ describe('POST /clip - image clip', () => {
     expect(stored?.httpMetadata?.contentType).toBe('image/png')
   })
 
+  /// 申告 MIME が未知/空でも、拡張子判定(extForMime)+実バイト検証を通った以上は
+  /// 正規 MIME で保存すること（#166）。修正前は file.type をそのまま使っていたため
+  /// application/octet-stream や空文字列が R2 metadata に残っていた。
+  it('未知/空の申告 MIME でも正規化した MIME で保存する（#166）', async () => {
+    const postWithType = (
+      filename: string,
+      bytes: Uint8Array,
+      type: string,
+    ) => {
+      const form = new FormData()
+      form.set('image', new File([bytes], filename, { type }))
+      return SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.SHARED_SECRET}` },
+        body: form,
+      })
+    }
+
+    const pngRes = await postWithType(
+      'octet-stream-1.png',
+      pngBytes(40),
+      'application/octet-stream',
+    )
+    expect(pngRes.status).toBe(200)
+    const pngJson = (await pngRes.json()) as { path: string }
+    const pngStored = await env.VAULT.get(pngJson.path)
+    expect(pngStored?.httpMetadata?.contentType).toBe('image/png')
+
+    const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
+    const jpegRes = await postWithType('empty-type-1.jpeg', jpegBytes, '')
+    expect(jpegRes.status).toBe(200)
+    const jpegJson = (await jpegRes.json()) as { path: string }
+    const jpegStored = await env.VAULT.get(jpegJson.path)
+    expect(jpegStored?.httpMetadata?.contentType).toBe('image/jpeg')
+  })
+
   it('generates an embed note under Inbox/ when embed=1 is set', async () => {
     const res = await postImage(
       { embed: '1', title: 'My Screenshot' },
