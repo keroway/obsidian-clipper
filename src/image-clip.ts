@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception'
 import {
   extForMime,
   matchesImageMagicBytes,
+  mimeForExt,
   resolveMaxImageBytes,
 } from './attachment'
 import type { Bindings } from './bindings'
@@ -145,7 +146,7 @@ export async function saveImageClip(
   const key = `${prefix}${attachmentsFolder}/${filename}`
 
   await env.VAULT.put(key, buf, {
-    httpMetadata: { contentType: file.type || `image/${ext}` },
+    httpMetadata: { contentType: mimeForExt(ext) },
     customMetadata: { source: 'obsidian-clipper', kind: 'image' },
   })
 

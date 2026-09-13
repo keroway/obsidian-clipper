@@ -10,6 +10,17 @@ const IMAGE_EXT: Record<string, string> = {
 
 const EXT_BY_FILENAME_RE = /\.([a-z0-9]+)$/i
 
+// extForMime が確定した保存拡張子から正規 MIME を逆引きする (#166)。
+// 申告 MIME (file.type) は未知/空/表記ゆれ (例: image/jpg) の可能性があるため、
+// R2 の httpMetadata.contentType には申告値をそのまま使わずこちらを使う。
+const MIME_BY_EXT: Record<string, string> = Object.fromEntries(
+  Object.entries(IMAGE_EXT).map(([mime, ext]) => [ext, mime]),
+)
+
+export function mimeForExt(ext: string): string {
+  return MIME_BY_EXT[ext] ?? `image/${ext}`
+}
+
 // MIME から保存拡張子を決める。MIME が未知/空ならファイル名の拡張子にフォールバックする。
 // どちらでも判定できなければ null (呼び出し側で 415 にする)。
 export function extForMime(mime: string, filename?: string): string | null {
