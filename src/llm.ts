@@ -58,8 +58,15 @@ async function summarize(
       ],
       max_tokens: SUMMARY_MAX_TOKENS,
     } as never,
-  )) as { response?: string }
-  return (r?.response ?? '').toString().trim()
+  )) as { response?: unknown }
+  const response = r?.response
+  if (response === undefined || response === null) return ''
+  if (typeof response !== 'string') {
+    throw new Error(
+      `workers-ai returned non-string response: ${typeof response}`,
+    )
+  }
+  return response.trim()
 }
 
 function summarizeWithAnthropic(

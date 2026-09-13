@@ -1444,6 +1444,29 @@ describe('summarizeWithProvider', () => {
     ).rejects.toThrow(/empty summary/)
   })
 
+  // #167: response が文字列以外 (object/number/boolean/array) のとき、以前は
+  // `.toString().trim()` で文字列化して正常な要約として返してしまっていた。
+  // 非文字列を明示的な失敗として throw することを確認する。
+  it.each([
+    ['object', { unexpected: 'value' }],
+    ['number', 42],
+    ['boolean', false],
+    ['array', ['one', 'two']],
+  ])(
+    'throws when workers-ai returns a non-string response (%s)',
+    async (_label, response) => {
+      const run = vi.fn(async () => ({ response }))
+      const testEnv = {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings
+
+      await expect(
+        summarizeWithProvider(testEnv, 'body text', 'Title'),
+      ).rejects.toThrow(/non-string response/)
+    },
+  )
+
   it('falls back to workers-ai when anthropic returns an empty summary', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       return new Response(JSON.stringify({ content: [] }), { status: 200 })
