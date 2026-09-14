@@ -55,6 +55,9 @@ export function normalizeUrl(input: string): string {
   } catch {
     throw new HTTPException(400, { message: 'invalid url' })
   }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    throw new HTTPException(400, { message: 'invalid url' })
+  }
   // X (旧 Twitter) ドメイン揺れの正規化
   if (u.hostname === 'mobile.twitter.com' || u.hostname === 'twitter.com') {
     u.hostname = 'x.com'

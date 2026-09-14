@@ -131,6 +131,18 @@ describe('normalizeUrl', () => {
   it('throws HTTPException on invalid URL', () => {
     expect(() => normalizeUrl('not-a-url')).toThrow()
   })
+
+  it('rejects non-http(s) schemes (javascript:)', () => {
+    expect(() => normalizeUrl('javascript:alert(1)')).toThrow()
+  })
+
+  it('rejects non-http(s) schemes (file:)', () => {
+    expect(() => normalizeUrl('file:///etc/passwd')).toThrow()
+  })
+
+  it('rejects non-http(s) schemes (data:)', () => {
+    expect(() => normalizeUrl('data:text/plain,hi')).toThrow()
+  })
 })
 
 // ─────────────────────────── sanitizeForFilename ───────────────────────────
@@ -1754,6 +1766,18 @@ describe('POST /clip integration', () => {
         Authorization: `Bearer ${env.SHARED_SECRET}`,
       },
       body: JSON.stringify({ title: 'No URL here' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when url has a non-http(s) scheme (javascript:)', async () => {
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify({ url: 'javascript:alert(1)' }),
     })
     expect(res.status).toBe(400)
   })
