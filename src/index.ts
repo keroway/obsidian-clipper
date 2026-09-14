@@ -139,8 +139,8 @@ app.post('/clip', async (c) => {
     }
   }
   return classified.kind === 'url'
-    ? handleUrlClip(c, classified.body)
-    : handleTextClip(c, classified.body)
+    ? await handleUrlClip(c, classified.body)
+    : await handleTextClip(c, classified.body)
 })
 
 app.onError((err, c) => {
