@@ -62,6 +62,10 @@ frontmatter 付き Markdown を R2 に保存する「URL 起点」一本道の�
 にそのまま埋め込まれ二重 frontmatter になり得る。v1 では検出・除去は行わ
 ない。
 
+- サイズ上限: `MAX_TEXT_CLIP_BYTES` (既定 1MiB)。超過は `413`
+  (`text clip too large`)。画像クリップの `MAX_IMAGE_BYTES` と同じ形の
+  vars で、`markdown`/`text` いずれの経路にも同じ上限を適用する (#176)。
+
 ### 画像クリップ
 
 `multipart/form-data` の `image` フィールド (File) を受け取り、許可 MIME
@@ -98,7 +102,7 @@ frontmatter 付き Markdown を R2 に保存する「URL 起点」一本道の�
 - `src/attachment.ts` (新設): 画像の MIME/サイズ検証・R2 キー組み立て・
   書き込み。
 - `src/bindings.ts` / `wrangler.jsonc`: `ATTACHMENTS_FOLDER` /
-  `MAX_IMAGE_BYTES` の vars を追加。
+  `MAX_IMAGE_BYTES` / `MAX_TEXT_CLIP_BYTES` の vars を追加。
 - `src/index.ts`: `POST /clip` をディスパッチャ化し、既存 URL フローは
   `handleUrlClip` として挙動を変えずに関数分離。`handleTextClip` /
   `handleImageClip` を追加。

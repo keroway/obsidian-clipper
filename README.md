@@ -346,8 +346,8 @@ Saved with `source: web-clip` frontmatter, under `INBOX_FOLDER`.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `markdown` | `string` | One of `markdown`/`text` | Markdown body, embedded as-is under `## 本文`. |
-| `text` | `string` | One of `markdown`/`text` | Plain text body (used when `markdown` is absent). |
+| `markdown` | `string` | One of `markdown`/`text` | Markdown body, embedded as-is under `## 本文` (up to `MAX_TEXT_CLIP_BYTES`, default 1 MiB). |
+| `text` | `string` | One of `markdown`/`text` | Plain text body (used when `markdown` is absent; same size limit as `markdown`). |
 | `title` | `string` | No | Explicit title. Falls back to the first non-empty line, then the note. |
 | `note` | `string` | No | User note. Saved as a `> [!note]` callout. |
 | `tags` | `string[]` | No | Additional tags merged with `clipped`. No host/LLM tags (no URL/article fetch). |
@@ -375,7 +375,7 @@ If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is suppl
 | `200` | Success JSON or duplicate JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 
@@ -391,6 +391,7 @@ Jina Reader and summary failures do not change the response to an error status f
 | `INBOX_FOLDER` | `"Inbox"` | Destination folder relative to the vault root. |
 | `ATTACHMENTS_FOLDER` | `"Attachments"` | Destination folder for image clips, relative to the vault root (ADR 0011). |
 | `MAX_IMAGE_BYTES` | `"10485760"` | Maximum accepted image size in bytes for image clips (ADR 0011). |
+| `MAX_TEXT_CLIP_BYTES` | `"1048576"` | Maximum accepted body size in bytes for text/markdown clips (#176). |
 | `ENABLE_SUMMARY` | `"true"` | Enables summarization. |
 | `ENABLE_AUTO_TAGS` | `"false"` | Generates LLM tags when no manual tags are supplied. The legacy name `ENABLE_AUTO_TAG` is also accepted. |
 | `AUTO_TAGS_ALLOWLIST` | `""` | Additional fixed hostname tags, for example `zenn.dev:zenn,github.com:github`. |

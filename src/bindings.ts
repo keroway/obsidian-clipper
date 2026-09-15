@@ -10,6 +10,8 @@ export type Bindings = {
   ATTACHMENTS_FOLDER?: string
   // 画像添付の最大バイト数 (既定 10MiB)。ADR 0011。
   MAX_IMAGE_BYTES?: string
+  // テキスト/Markdown クリップの最大バイト数 (既定 1MiB)。#176。
+  MAX_TEXT_CLIP_BYTES?: string
   ENABLE_SUMMARY: string
   SUMMARY_MODEL: string
   ENABLE_AUTO_TAGS?: string

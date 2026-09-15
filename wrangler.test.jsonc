@@ -20,6 +20,7 @@
     "INBOX_FOLDER": "Inbox",
     "ATTACHMENTS_FOLDER": "Attachments",
     "MAX_IMAGE_BYTES": "10485760",
+    "MAX_TEXT_CLIP_BYTES": "1048576",
     "ENABLE_SUMMARY": "false",
     "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
     "SUMMARY_PROVIDER": "workers-ai",
