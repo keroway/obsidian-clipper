@@ -335,9 +335,9 @@ branches on `Content-Type` and body content to accept three kinds of input
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `url` | `string` | Yes | URL to save. Tracking parameters are removed automatically. |
-| `title` | `string` | No | Explicit title. If omitted, the extracted title is used when available. |
-| `selection` | `string` | No | Selected text from the page. Saved as a quote block. |
-| `note` | `string` | No | User note. Saved as a `> [!note]` callout. |
+| `title` | `string` | No | Explicit title. If omitted, the extracted title is used when available (up to `MAX_TEXT_CLIP_BYTES`, default 1 MiB; #178). |
+| `selection` | `string` | No | Selected text from the page. Saved as a quote block (up to `MAX_TEXT_CLIP_BYTES`; #178). |
+| `note` | `string` | No | User note. Saved as a `> [!note]` callout (up to `MAX_TEXT_CLIP_BYTES`; #178). |
 | `tags` | `string[]` | No | Additional tags merged with `clipped`, allowlist tags, and optional LLM tags. |
 
 Saved with `source: web-clip` frontmatter, under `INBOX_FOLDER`.
@@ -348,8 +348,8 @@ Saved with `source: web-clip` frontmatter, under `INBOX_FOLDER`.
 | --- | --- | --- | --- |
 | `markdown` | `string` | One of `markdown`/`text` | Markdown body, embedded as-is under `## 本文` (up to `MAX_TEXT_CLIP_BYTES`, default 1 MiB). |
 | `text` | `string` | One of `markdown`/`text` | Plain text body (used when `markdown` is absent; same size limit as `markdown`). |
-| `title` | `string` | No | Explicit title. Falls back to the first non-empty line, then the note. |
-| `note` | `string` | No | User note. Saved as a `> [!note]` callout. |
+| `title` | `string` | No | Explicit title. Falls back to the first non-empty line, then the note (up to `MAX_TEXT_CLIP_BYTES`; #178). |
+| `note` | `string` | No | User note. Saved as a `> [!note]` callout (up to `MAX_TEXT_CLIP_BYTES`; #178). |
 | `tags` | `string[]` | No | Additional tags merged with `clipped`. No host/LLM tags (no URL/article fetch). |
 
 Saved with `source: text-clip` frontmatter (no `source_url`), under `INBOX_FOLDER`. No summarization, auto-tagging, or URL-based duplicate detection.
@@ -375,7 +375,7 @@ If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is suppl
 | `200` | Success JSON or duplicate JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 

@@ -1786,6 +1786,68 @@ describe('POST /clip integration', () => {
     expect(res.status).toBe(400)
   })
 
+  /// title/note/selection は URL クリップにもサイズ上限が存在しなかった（#178）。
+  /// 本文取得（fetchArticle）より前に弾くため fetch のモックは不要。
+  it('MAX_TEXT_CLIP_BYTES を超える title を url クリップで 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://example.com/article',
+          title: 'too long title',
+        }),
+      })
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
+  it('MAX_TEXT_CLIP_BYTES を超える note/selection を url クリップで 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const noteRes = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://example.com/article',
+          note: 'too long note',
+        }),
+      })
+      expect(noteRes.status).toBe(413)
+
+      const selectionRes = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://example.com/article',
+          selection: 'too long selection',
+        }),
+      })
+      expect(selectionRes.status).toBe(413)
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
   it('saves clip to R2 and returns ok: true', async () => {
     // Mock the outbound Jina fetch so the test is self-contained
     vi.spyOn(globalThis, 'fetch').mockImplementation(
@@ -2612,6 +2674,40 @@ describe('POST /clip - text/markdown clip', () => {
       const res = await postJson({ text: 'too long' })
 
       expect(res.status).toBe(413)
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
+  /// title/note は markdown/text と同じく renderNote() 経由でそのまま R2 に
+  /// 書き込まれるが、サイズ検証の対象外だった（#178）。
+  it('MAX_TEXT_CLIP_BYTES を超える title を 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await postJson({ text: 'ok', title: 'too long title' })
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
+  it('MAX_TEXT_CLIP_BYTES を超える note を 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await postJson({ text: 'ok', note: 'too long note' })
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('too large')
     } finally {
       testEnv.MAX_TEXT_CLIP_BYTES = original
     }
