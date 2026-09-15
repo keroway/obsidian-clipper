@@ -29,6 +29,10 @@ import {
   normalizeTag,
   resolveHostTagRules,
 } from './tags'
+import {
+  DEFAULT_MAX_TEXT_CLIP_BYTES,
+  resolveMaxTextClipBytes,
+} from './text-clip'
 import { normalizeUrl } from './url'
 import {
   indexSkipMessage,
@@ -2580,6 +2584,38 @@ describe('POST /clip - text/markdown clip', () => {
     const res = await postJson({ title: 'nothing useful' })
     expect(res.status).toBe(400)
   })
+
+  /// MAX_TEXT_CLIP_BYTES を超える markdown/text を 413 で拒否すること（#176）。
+  /// 画像クリップの MAX_IMAGE_BYTES テスト（#77）と同様、テスト env の上限を
+  /// 一時的に小さくして境界を跨がせる。
+  it('MAX_TEXT_CLIP_BYTES を超える markdown を 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await postJson({ markdown: 'too long' })
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
+  it('MAX_TEXT_CLIP_BYTES を超える text を 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await postJson({ text: 'too long' })
+
+      expect(res.status).toBe(413)
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
 })
 
 // ─────────── Integration: image clip (multipart/form-data, ADR 0011) ───────────
@@ -2637,6 +2673,27 @@ describe('resolveMaxImageBytes', () => {
 
   it('正の数はそのまま使う', () => {
     expect(resolveMaxImageBytes('1024')).toBe(1024)
+  })
+})
+
+describe('resolveMaxTextClipBytes', () => {
+  // resolveMaxImageBytes (#77) と同じフォールバック方針 (#176)。
+  it('未設定なら既定値', () => {
+    expect(resolveMaxTextClipBytes(undefined)).toBe(DEFAULT_MAX_TEXT_CLIP_BYTES)
+  })
+
+  it('数値として解釈できない値なら既定値', () => {
+    expect(resolveMaxTextClipBytes('abc')).toBe(DEFAULT_MAX_TEXT_CLIP_BYTES)
+    expect(resolveMaxTextClipBytes('')).toBe(DEFAULT_MAX_TEXT_CLIP_BYTES)
+  })
+
+  it('0 以下なら既定値（全クリップを拒否する設定にしない）', () => {
+    expect(resolveMaxTextClipBytes('0')).toBe(DEFAULT_MAX_TEXT_CLIP_BYTES)
+    expect(resolveMaxTextClipBytes('-1')).toBe(DEFAULT_MAX_TEXT_CLIP_BYTES)
+  })
+
+  it('正の数はそのまま使う', () => {
+    expect(resolveMaxTextClipBytes('1024')).toBe(1024)
   })
 })
 
