@@ -49,7 +49,11 @@ import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
 import { autoTagsEnabled, hostTagsFor, mergeTags } from './tags'
-import { saveTextClip } from './text-clip'
+import {
+  assertFieldWithinLimit,
+  resolveMaxTextClipBytes,
+  saveTextClip,
+} from './text-clip'
 import { jstIso, jstStamp } from './time'
 import { hostname, normalizeUrl } from './url'
 import {
@@ -162,6 +166,14 @@ export default app
 
 // ---- URL クリップ (既存フロー、挙動不変) ----
 async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
+  // title/note/selection はクライアント制御可能な任意長の文字列で、テキスト
+  // クリップの本文と同じく renderNote() 経由でそのまま R2 に書き込まれる。
+  // 本文取得等の重い処理の前に、text-clip と同じ上限で先に弾く (#178)。
+  const maxFieldBytes = resolveMaxTextClipBytes(c.env.MAX_TEXT_CLIP_BYTES)
+  assertFieldWithinLimit(payload.title, maxFieldBytes, 'title')
+  assertFieldWithinLimit(payload.note, maxFieldBytes, 'note')
+  assertFieldWithinLimit(payload.selection, maxFieldBytes, 'selection')
+
   const url = normalizeUrl(payload.url)
 
   const refresh = c.req.query('refresh') === '1'

@@ -21,6 +21,22 @@ export function resolveMaxTextClipBytes(raw: string | undefined): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_TEXT_CLIP_BYTES
 }
 
+// title/note/selection はクライアント制御可能な任意長の文字列で、本文と同じく
+// renderNote() 経由でそのまま R2 に書き込まれる (#178)。本文と同じ上限を
+// 個別に適用し、超過時は 413 で明示的に弾く。
+export function assertFieldWithinLimit(
+  value: string | undefined,
+  maxBytes: number,
+  fieldName: string,
+): void {
+  if (
+    value !== undefined &&
+    new TextEncoder().encode(value).length > maxBytes
+  ) {
+    throw new HTTPException(413, { message: `${fieldName} too large` })
+  }
+}
+
 export async function saveTextClip(
   env: Bindings,
   payload: TextClipBody,
@@ -35,6 +51,8 @@ export async function saveTextClip(
   if (new TextEncoder().encode(bodyText).length > maxBytes) {
     throw new HTTPException(413, { message: 'text clip too large' })
   }
+  assertFieldWithinLimit(payload.title, maxBytes, 'title')
+  assertFieldWithinLimit(payload.note, maxBytes, 'note')
 
   const folder = (env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
   const prefix = (env.VAULT_PREFIX || '').replace(/^\/+/, '')

@@ -66,6 +66,18 @@ frontmatter 付き Markdown を R2 に保存する「URL 起点」一本道の�
   (`text clip too large`)。画像クリップの `MAX_IMAGE_BYTES` と同じ形の
   vars で、`markdown`/`text` いずれの経路にも同じ上限を適用する (#176)。
 
+> **追記 (2026-09-16, #178 で実施)**: #176/#177 で `markdown`/`text`/画像の
+> サイズ上限は揃ったが、`title` / `note` / `selection` はサイズ検証の対象
+> 外のまま残っていた。これらも `renderNote()` 経由でそのまま R2 に書き込ま
+> れるクライアント制御可能な文字列であるため、同じ `MAX_TEXT_CLIP_BYTES` を
+> 個別に適用し、超過時は `413` (`title too large` / `note too large` /
+> `selection too large`) を返すようにした。テキストクリップ
+> (`saveTextClip`, `title`/`note`) だけでなく、そもそもサイズ上限機構が
+> 皆無だった URL クリップ (`handleUrlClip`, `title`/`note`/`selection`) に
+> も同じチェックを追加した。専用の小さい上限は設けず、本文と同じ既存の
+> `MAX_TEXT_CLIP_BYTES` を再利用する (新しい vars を増やさないほうが
+> 運用がシンプルなため)。
+
 ### 画像クリップ
 
 `multipart/form-data` の `image` フィールド (File) を受け取り、許可 MIME
