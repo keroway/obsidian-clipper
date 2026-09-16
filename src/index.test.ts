@@ -985,6 +985,22 @@ describe('normalizeTag', () => {
   it('returns empty string for symbol-only input', () => {
     expect(normalizeTag('***')).toBe('')
   })
+
+  /// #180: tags 配列の各要素にはサイズ上限が無く、frontmatter に巨大な値が
+  /// そのまま書き込まれていた。正規化後の長さを 60 文字に切り詰める。
+  it('truncates normalized output at 60 characters', () => {
+    const long = 'a'.repeat(200)
+    const result = normalizeTag(long)
+    expect(result).toHaveLength(60)
+    expect(result).toBe('a'.repeat(60))
+  })
+
+  /// 正規化前の入力が極端に大きい場合は、regex を回すコストを避けるため
+  /// 正規化を行わず無効なタグ(空文字)として扱う。
+  it('rejects extremely large input before normalizing', () => {
+    const huge = 'a'.repeat(5_000_000)
+    expect(normalizeTag(huge)).toBe('')
+  })
 })
 
 describe('mergeTags', () => {
@@ -1003,6 +1019,12 @@ describe('mergeTags', () => {
   it('caps total tags at the limit (8)', () => {
     const many = Array.from({ length: 20 }, (_, i) => `tag${i}`)
     expect(mergeTags(many)).toHaveLength(8)
+  })
+
+  /// #180: 巨大な単一タグが frontmatter にそのまま保存されないこと。
+  it('drops a huge single tag instead of storing it verbatim', () => {
+    const huge = 'a'.repeat(5_000_000)
+    expect(mergeTags(['clipped', huge])).toEqual(['clipped'])
   })
 })
 
@@ -2849,6 +2871,42 @@ describe('POST /clip - image clip', () => {
       expect(json.error).toContain('too large')
     } finally {
       testEnv.MAX_IMAGE_BYTES = original
+    }
+  })
+
+  /// 画像クリップの title/note/tags は #176/#178 のどちらの対象にもならず、
+  /// サイズ検証自体が存在しなかった（#180）。text-clip / URL クリップと同じ
+  /// MAX_TEXT_CLIP_BYTES を適用して 413 で拒否する。
+  it('MAX_TEXT_CLIP_BYTES を超える title/note/tags を画像クリップで 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const titleRes = await postImage(
+        { title: 'too long title' },
+        'title-too-large.png',
+      )
+      expect(titleRes.status).toBe(413)
+      const titleJson = (await titleRes.json()) as {
+        ok: boolean
+        error: string
+      }
+      expect(titleJson.ok).toBe(false)
+      expect(titleJson.error).toContain('too large')
+
+      const noteRes = await postImage(
+        { note: 'too long note' },
+        'note-too-large.png',
+      )
+      expect(noteRes.status).toBe(413)
+
+      const tagsRes = await postImage(
+        { tags: 'too,long,tags' },
+        'tags-too-large.png',
+      )
+      expect(tagsRes.status).toBe(413)
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
     }
   })
 

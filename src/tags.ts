@@ -4,6 +4,16 @@ import { hostname } from './url'
 
 const MAX_AUTO_TAGS_TOTAL = 8
 
+// 正規化後のタグ 1 件あたりの長さ上限。sanitizeForFilename のスラグ長 (60) に揃える。
+// MAX_AUTO_TAGS_TOTAL と組み合わせても frontmatter に載る tags の総量は
+// 高々 8 * 60 バイト程度に収まるため、別途タグ配列全体の合計サイズ上限は設けない (#180)。
+const MAX_TAG_LENGTH = 60
+
+// 正規化前の生入力の文字数上限。この上限を超える入力は、巨大な文字列に対して
+// regex を繰り返し走らせるコストを避けるため、正規化を行わずに無効なタグとして
+// 棄却する (#180)。
+const MAX_TAG_INPUT_LENGTH = 1000
+
 // ホスト名サフィックス → 固定タグの既定 allowlist。LLM 不要で確実に付与する。
 // AUTO_TAGS_ALLOWLIST env で追記可能 (resolveHostTagRules 参照)。
 const DEFAULT_HOST_TAG_RULES: ReadonlyArray<[string, string]> = [
@@ -22,6 +32,7 @@ const DEFAULT_HOST_TAG_RULES: ReadonlyArray<[string, string]> = [
 // Obsidian / Dataview のタグで扱いにくい文字を除去し、空白はハイフン化して正規化する。
 // 戻り値が空文字なら呼び出し側で捨てる。
 export function normalizeTag(input: string): string {
+  if (input.length > MAX_TAG_INPUT_LENGTH) return ''
   const collapsed = input
     .trim()
     .toLowerCase()
@@ -44,7 +55,14 @@ export function normalizeTag(input: string): string {
   ) {
     end--
   }
-  return collapsed.slice(start, end)
+  const trimmed = collapsed.slice(start, end)
+  if (trimmed.length <= MAX_TAG_LENGTH) return trimmed
+  // 長さ上限で切り詰めた末尾に - / _ が残る場合は、それも取り除く。
+  let cut = MAX_TAG_LENGTH
+  while (cut > 0 && (trimmed[cut - 1] === '-' || trimmed[cut - 1] === '_')) {
+    cut--
+  }
+  return trimmed.slice(0, cut)
 }
 
 // 複数ソースのタグを正規化 → 重複排除 → 上限で打ち切る。

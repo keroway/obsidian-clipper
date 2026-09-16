@@ -12,6 +12,7 @@ import type { Bindings } from './bindings'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
 import { mergeTags } from './tags'
+import { assertFieldWithinLimit, resolveMaxTextClipBytes } from './text-clip'
 import { jstIso, jstStamp } from './time'
 import {
   indexSkipMessage,
@@ -83,6 +84,25 @@ export async function saveImageClip(
     typeof title === 'string' ||
     typeof note === 'string' ||
     typeof tagsField === 'string'
+
+  // title/note/tags は multipart 経由でも renderNote() にそのまま渡り R2 に
+  // 書き込まれるため、text-clip / URL クリップと同じ上限を適用する (#180)。
+  const maxFieldBytes = resolveMaxTextClipBytes(env.MAX_TEXT_CLIP_BYTES)
+  assertFieldWithinLimit(
+    typeof title === 'string' ? title : undefined,
+    maxFieldBytes,
+    'title',
+  )
+  assertFieldWithinLimit(
+    typeof note === 'string' ? note : undefined,
+    maxFieldBytes,
+    'note',
+  )
+  assertFieldWithinLimit(
+    typeof tagsField === 'string' ? tagsField : undefined,
+    maxFieldBytes,
+    'tags',
+  )
 
   const buildEmbedNote = async (
     now: Date,
