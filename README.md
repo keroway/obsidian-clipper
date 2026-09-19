@@ -375,7 +375,7 @@ If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is suppl
 | `200` | Success JSON or duplicate JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'tags too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 

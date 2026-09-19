@@ -1870,6 +1870,33 @@ describe('POST /clip integration', () => {
     }
   })
 
+  /// tags 配列は要素単体の長さ上限（#180/#181）はあるが、配列全体のサイズ上限が
+  /// 無かった（#183）。title/note/selection と同じく本文取得より前に弾く。
+  it('MAX_TEXT_CLIP_BYTES を超える tags を url クリップで 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://example.com/article',
+          tags: ['a', 'b', 'c', 'd', 'e'],
+        }),
+      })
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('tags too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
   it('saves clip to R2 and returns ok: true', async () => {
     // Mock the outbound Jina fetch so the test is self-contained
     vi.spyOn(globalThis, 'fetch').mockImplementation(
@@ -2730,6 +2757,27 @@ describe('POST /clip - text/markdown clip', () => {
       const json = (await res.json()) as { ok: boolean; error: string }
       expect(json.ok).toBe(false)
       expect(json.error).toContain('too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
+  /// tags 配列は要素単体の長さ上限（#180/#181）はあるが、配列全体のサイズ上限が
+  /// テキスト/Markdown クリップにも無かった（#183）。
+  it('MAX_TEXT_CLIP_BYTES を超える tags を 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await postJson({
+        text: 'ok',
+        tags: ['a', 'b', 'c', 'd', 'e'],
+      })
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('tags too large')
     } finally {
       testEnv.MAX_TEXT_CLIP_BYTES = original
     }

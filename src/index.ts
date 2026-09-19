@@ -51,6 +51,7 @@ import { notifyWebhook } from './notify'
 import { autoTagsEnabled, hostTagsFor, mergeTags } from './tags'
 import {
   assertFieldWithinLimit,
+  assertTagsWithinLimit,
   resolveMaxTextClipBytes,
   saveTextClip,
 } from './text-clip'
@@ -173,6 +174,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   assertFieldWithinLimit(payload.title, maxFieldBytes, 'title')
   assertFieldWithinLimit(payload.note, maxFieldBytes, 'note')
   assertFieldWithinLimit(payload.selection, maxFieldBytes, 'selection')
+  assertTagsWithinLimit(payload.tags, maxFieldBytes)
 
   const url = normalizeUrl(payload.url)
 

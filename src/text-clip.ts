@@ -37,6 +37,24 @@ export function assertFieldWithinLimit(
   }
 }
 
+// tags 配列 (JSON 経路: URL クリップ・テキストクリップ) は要素単体の長さ上限
+// (#180/#181) しか無く、配列全体のサイズには上限が無かった (#183)。画像クリップの
+// tagsField (multipart のカンマ区切り文字列) は assertFieldWithinLimit で保護済み
+// なので、JSON 経路も要素の合計バイト数で同じ上限を適用して揃える。
+export function assertTagsWithinLimit(
+  tags: string[] | undefined,
+  maxBytes: number,
+): void {
+  if (!tags || tags.length === 0) return
+  const totalBytes = tags.reduce(
+    (sum, tag) => sum + new TextEncoder().encode(tag).length,
+    0,
+  )
+  if (totalBytes > maxBytes) {
+    throw new HTTPException(413, { message: 'tags too large' })
+  }
+}
+
 export async function saveTextClip(
   env: Bindings,
   payload: TextClipBody,
@@ -53,6 +71,7 @@ export async function saveTextClip(
   }
   assertFieldWithinLimit(payload.title, maxBytes, 'title')
   assertFieldWithinLimit(payload.note, maxBytes, 'note')
+  assertTagsWithinLimit(payload.tags, maxBytes)
 
   const folder = (env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
   const prefix = (env.VAULT_PREFIX || '').replace(/^\/+/, '')
