@@ -124,8 +124,18 @@ export async function generateTags(
       ],
       max_tokens: 60,
     } as never,
-  )) as { response?: string }
-  const tags = parseTagList((r?.response ?? '').toString())
+  )) as { response?: unknown }
+  const response = r?.response
+  if (
+    response !== undefined &&
+    response !== null &&
+    typeof response !== 'string'
+  ) {
+    throw new Error(
+      `workers-ai returned non-string response: ${typeof response}`,
+    )
+  }
+  const tags = parseTagList((response ?? '').toString())
   if (!hasValidTag(tags)) throw new Error('workers-ai returned no usable tags')
   return tags
 }
