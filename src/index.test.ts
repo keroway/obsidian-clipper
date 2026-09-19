@@ -1652,6 +1652,30 @@ describe('generateTags', () => {
 
     await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow()
   })
+
+  // #185: response が文字列以外 (object/number/boolean/array) のとき、以前は
+  // `.toString()` で文字列化して有効なタグ生成結果として保存してしまっていた
+  // (例: `object-object` タグ)。非文字列を明示的な失敗として throw し、
+  // 呼び出し側 (index.ts) の catch (失敗通知経路) に到達することを確認する。
+  it.each([
+    ['object', { unexpected: 'value' }],
+    ['number', 123],
+    ['boolean', true],
+    ['array', ['tech', 'ai']],
+  ])(
+    'throws when workers-ai returns a non-string response (%s)',
+    async (_label, response) => {
+      const run = vi.fn(async () => ({ response }))
+      const testEnv = {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings
+
+      await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow(
+        /non-string response/,
+      )
+    },
+  )
 })
 
 // ─────────────────────────── notifyWebhook ───────────────────────────
