@@ -1943,6 +1943,70 @@ describe('POST /clip integration', () => {
     }
   })
 
+  /// url はサイズ検証の対象外で、title 等と同規模の入力でも本文取得・保存
+  /// 処理まで到達していた（#189）。title/note/selection と同じ上限を境界値まで
+  /// 検証し、超過時は fetch も VAULT.put も呼ばれないことを確認する。
+  it('MAX_TEXT_CLIP_BYTES を超える url を url クリップで 413 で拒否し、fetch も VAULT.put も呼ばない', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '32'
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('should not be called'))
+    const putSpy = vi.spyOn(env.VAULT, 'put')
+    try {
+      const longUrl = `https://example.com/${'a'.repeat(40)}`
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url: longUrl }),
+      })
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('url too large')
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(putSpy).not.toHaveBeenCalled()
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+      fetchSpy.mockRestore()
+      putSpy.mockRestore()
+    }
+  })
+
+  it('上限ちょうどの url を url クリップで受け付ける', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '32'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = input.toString()
+      if (url.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: Example\n\nBody.', { status: 200 })
+      }
+      return new Response('Not Found', { status: 404 })
+    })
+    try {
+      // 境界値 32 バイトちょうどになるよう path 長を調整する。
+      let exactUrl = 'https://example.com/'
+      while (new TextEncoder().encode(exactUrl).length < 32) exactUrl += 'a'
+      expect(new TextEncoder().encode(exactUrl).length).toBe(32)
+      const res = await SELF.fetch('http://example.com/clip?refresh=1', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url: exactUrl }),
+      })
+      expect(res.status).not.toBe(413)
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+
   it('saves clip to R2 and returns ok: true', async () => {
     // Mock the outbound Jina fetch so the test is self-contained
     vi.spyOn(globalThis, 'fetch').mockImplementation(
