@@ -405,6 +405,28 @@ describe('renderNote', () => {
     const closingDash = lines.indexOf('---', 1)
     expect(lines.slice(0, closingDash + 1).join('\n')).not.toContain('\x00')
   })
+
+  // issue #187: C1 制御文字 (U+0081, U+009F) が frontmatter に素通しされ
+  // YAML 解析エラーになる。NEL (U+0085) は解析できるが値が空白に変質する
+  it('escapes C1 control characters in title as \\xNN', () => {
+    for (const code of [0x81, 0x9f]) {
+      const char = String.fromCharCode(code)
+      const note = renderNote({ ...baseOpts, title: `a${char}b` })
+      const lines = note.split('\n')
+      const sourceTitleLine = lines.find((l) => l.startsWith('source_title:'))
+      const hex = code.toString(16).padStart(2, '0')
+      expect(sourceTitleLine).toBe(`source_title: "a\\x${hex}b"`)
+      const closingDash = lines.indexOf('---', 1)
+      expect(lines.slice(0, closingDash + 1).join('\n')).not.toContain(char)
+    }
+  })
+
+  it('escapes NEL (U+0085) in title as \\x85 so the value is preserved', () => {
+    const note = renderNote({ ...baseOpts, title: 'a\x85b' })
+    const lines = note.split('\n')
+    const sourceTitleLine = lines.find((l) => l.startsWith('source_title:'))
+    expect(sourceTitleLine).toBe('source_title: "a\\x85b"')
+  })
 })
 
 // ─────────────────────────── sha1Hex ───────────────────────────

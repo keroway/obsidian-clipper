@@ -12,13 +12,15 @@ export function sanitizeForFilename(name: string): string {
 }
 
 // YAML 二重引用符スカラー内で安全な制御文字エスケープ (\n \r \t は専用エスケープ、
-// それ以外の C0 制御文字と DEL は \xNN)
+// それ以外の C0 制御文字・DEL・C1 制御文字 (U+0080-U+009F, NEL の U+0085 含む) は \xNN。
+// C1 はエスケープしないと PyYAML が解析エラーにする、または NEL のように YAML の
+// 改行処理で空白に変質してしまう (issue #187)。
 function yamlEscape(s: string): string {
   return `"${s
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     // biome-ignore lint/suspicious/noControlCharactersInRegex: YAML スカラー内で制御文字を安全にエスケープするために意図的に含める
-    .replace(/[\x00-\x1f\x7f]/g, (c) => {
+    .replace(/[\x00-\x1f\x7f-\x9f]/g, (c) => {
       switch (c) {
         case '\n':
           return '\\n'
