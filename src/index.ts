@@ -175,8 +175,12 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   assertFieldWithinLimit(payload.note, maxFieldBytes, 'note')
   assertFieldWithinLimit(payload.selection, maxFieldBytes, 'selection')
   assertTagsWithinLimit(payload.tags, maxFieldBytes)
+  // url は本文取得・R2 保存まで到達する前に弾く必要がある (#189)。normalizeUrl は
+  // ホスト名の書き換え等で長さを変えうるので、正規化前後どちらでも上限を保証する。
+  assertFieldWithinLimit(payload.url, maxFieldBytes, 'url')
 
   const url = normalizeUrl(payload.url)
+  assertFieldWithinLimit(url, maxFieldBytes, 'url')
 
   const refresh = c.req.query('refresh') === '1'
 

@@ -334,7 +334,7 @@ branches on `Content-Type` and body content to accept three kinds of input
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `url` | `string` | Yes | URL to save. Tracking parameters are removed automatically. |
+| `url` | `string` | Yes | URL to save. Tracking parameters are removed automatically (up to `MAX_TEXT_CLIP_BYTES`, default 1 MiB, checked both before and after normalization; #189). |
 | `title` | `string` | No | Explicit title. If omitted, the extracted title is used when available (up to `MAX_TEXT_CLIP_BYTES`, default 1 MiB; #178). |
 | `selection` | `string` | No | Selected text from the page. Saved as a quote block (up to `MAX_TEXT_CLIP_BYTES`; #178). |
 | `note` | `string` | No | User note. Saved as a `> [!note]` callout (up to `MAX_TEXT_CLIP_BYTES`; #178). |
@@ -375,7 +375,7 @@ If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is suppl
 | `200` | Success JSON or duplicate JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'tags too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 
