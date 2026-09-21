@@ -427,6 +427,21 @@ describe('renderNote', () => {
     const sourceTitleLine = lines.find((l) => l.startsWith('source_title:'))
     expect(sourceTitleLine).toBe('source_title: "a\\x85b"')
   })
+
+  // issue #193: U+FFFE / U+FFFF (BMP のノンキャラクタ) が frontmatter に
+  // 素通しされ PyYAML の ReaderError になる
+  it('escapes U+FFFE and U+FFFF in title as \\uNNNN', () => {
+    for (const code of [0xfffe, 0xffff]) {
+      const char = String.fromCharCode(code)
+      const note = renderNote({ ...baseOpts, title: `a${char}b` })
+      const lines = note.split('\n')
+      const sourceTitleLine = lines.find((l) => l.startsWith('source_title:'))
+      const hex = code.toString(16).padStart(4, '0')
+      expect(sourceTitleLine).toBe(`source_title: "a\\u${hex}b"`)
+      const closingDash = lines.indexOf('---', 1)
+      expect(lines.slice(0, closingDash + 1).join('\n')).not.toContain(char)
+    }
+  })
 })
 
 // ─────────────────────────── sha1Hex ───────────────────────────
