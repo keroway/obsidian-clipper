@@ -15,12 +15,14 @@ export function sanitizeForFilename(name: string): string {
 // それ以外の C0 制御文字・DEL・C1 制御文字 (U+0080-U+009F, NEL の U+0085 含む) は \xNN。
 // C1 はエスケープしないと PyYAML が解析エラーにする、または NEL のように YAML の
 // 改行処理で空白に変質してしまう (issue #187)。
+// U+FFFE / U+FFFF (BMP のノンキャラクタ) も YAML 1.1 の c-printable に含まれず、
+// エスケープしないと PyYAML が ReaderError で解析失敗する (issue #193)。\uNNNN で退避する。
 function yamlEscape(s: string): string {
   return `"${s
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
     // biome-ignore lint/suspicious/noControlCharactersInRegex: YAML スカラー内で制御文字を安全にエスケープするために意図的に含める
-    .replace(/[\x00-\x1f\x7f-\x9f]/g, (c) => {
+    .replace(/[\x00-\x1f\x7f-\x9f￾￿]/g, (c) => {
       switch (c) {
         case '\n':
           return '\\n'
@@ -28,8 +30,12 @@ function yamlEscape(s: string): string {
           return '\\r'
         case '\t':
           return '\\t'
-        default:
-          return `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`
+        default: {
+          const code = c.charCodeAt(0)
+          return code > 0xff
+            ? `\\u${code.toString(16).padStart(4, '0')}`
+            : `\\x${code.toString(16).padStart(2, '0')}`
+        }
       }
     })}"`
 }
