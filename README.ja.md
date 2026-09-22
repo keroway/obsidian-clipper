@@ -334,10 +334,10 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 
 | フィールド | 型 | 必須 | 説明 |
 | --- | --- | --- | --- |
-| `url` | `string` | はい | 保存対象 URL。トラッキングパラメータは自動で除去されます。 |
-| `title` | `string` | いいえ | 明示的なタイトル。未指定時は抽出されたタイトルを使います。 |
-| `selection` | `string` | いいえ | ページ上で選択していたテキスト。引用ブロックとして保存されます。 |
-| `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます。 |
+| `url` | `string` | はい | 保存対象 URL。トラッキングパラメータは自動で除去されます (`MAX_TEXT_CLIP_BYTES`、既定 1 MiB まで。正規化の前後両方でチェック; #189)。 |
+| `title` | `string` | いいえ | 明示的なタイトル。未指定時は抽出されたタイトルを使います (`MAX_TEXT_CLIP_BYTES`、既定 1 MiB まで; #178)。 |
+| `selection` | `string` | いいえ | ページ上で選択していたテキスト。引用ブロックとして保存されます (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
+| `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
 | `tags` | `string[]` | いいえ | 追加タグ。`clipped`、allowlist タグ、任意の LLM タグと統合されます。 |
 
 `source: web-clip` frontmatter で `INBOX_FOLDER` 配下に保存されます。
@@ -346,10 +346,10 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 
 | フィールド | 型 | 必須 | 説明 |
 | --- | --- | --- | --- |
-| `markdown` | `string` | `markdown`/`text` のいずれか | Markdown 本文。`## 本文` 配下にそのまま埋め込まれます。 |
-| `text` | `string` | `markdown`/`text` のいずれか | プレーンテキスト本文 (`markdown` が無い場合に使用)。 |
-| `title` | `string` | いいえ | 明示的なタイトル。未指定時は本文の最初の非空行、次に note にフォールバックします。 |
-| `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます。 |
+| `markdown` | `string` | `markdown`/`text` のいずれか | Markdown 本文。`## 本文` 配下にそのまま埋め込まれます (`MAX_TEXT_CLIP_BYTES`、既定 1 MiB まで)。 |
+| `text` | `string` | `markdown`/`text` のいずれか | プレーンテキスト本文 (`markdown` が無い場合に使用。上限は `markdown` と同じ)。 |
+| `title` | `string` | いいえ | 明示的なタイトル。未指定時は本文の最初の非空行、次に note にフォールバックします (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
+| `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
 | `tags` | `string[]` | いいえ | 追加タグ。`clipped` と統合されます (URL/本文取得を行わないため、ホスト名/LLM タグは付きません)。 |
 
 `source: text-clip` frontmatter (`source_url` なし) で `INBOX_FOLDER` 配下に保存されます。
@@ -376,7 +376,7 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 | `200` | 成功 JSON または重複 JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 
@@ -392,6 +392,7 @@ Jina Reader や要約の失敗は、URL クリップにおいてもエラース�
 | `INBOX_FOLDER` | `"Inbox"` | Vault ルートからの保存先フォルダ。 |
 | `ATTACHMENTS_FOLDER` | `"Attachments"` | 画像クリップの保存先フォルダ。Vault ルートからの相対パス (ADR 0011)。 |
 | `MAX_IMAGE_BYTES` | `"10485760"` | 画像クリップで許可する最大バイト数 (ADR 0011)。 |
+| `MAX_TEXT_CLIP_BYTES` | `"1048576"` | テキスト/Markdown クリップで許可する最大本文バイト数 (#176)。 |
 | `ENABLE_SUMMARY` | `"true"` | 要約を有効にします。 |
 | `ENABLE_AUTO_TAGS` | `"false"` | 手動タグがない場合に LLM タグを生成します。旧名 `ENABLE_AUTO_TAG` も受け付けます。 |
 | `AUTO_TAGS_ALLOWLIST` | `""` | 追加の固定ホスト名タグ。例: `zenn.dev:zenn,github.com:github`。 |
