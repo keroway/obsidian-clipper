@@ -122,3 +122,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ```
 
 - iOS では Obsidian 起動時にしか Remotely Save が pull しない。「クリップ即時反映」は仕様外なので、即時性を担保する設計に倒さないこと。
+
+## Codex 向け運用ルール
+
+Codex 向けの横断運用ルールは `keroway/CLAUDE.md` ではなく
+[agent-assets `docs/codex-common-instructions.md`](https://github.com/keroway/agent-assets/blob/main/docs/codex-common-instructions.md)
+を正典とする（Codex は git ルートより上の AGENTS.md を読まないため）。
