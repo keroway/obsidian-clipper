@@ -392,7 +392,7 @@ Jina Reader や要約の失敗は、URL クリップにおいてもエラース�
 | `INBOX_FOLDER` | `"Inbox"` | Vault ルートからの保存先フォルダ。 |
 | `ATTACHMENTS_FOLDER` | `"Attachments"` | 画像クリップの保存先フォルダ。Vault ルートからの相対パス (ADR 0011)。 |
 | `MAX_IMAGE_BYTES` | `"10485760"` | 画像クリップで許可する最大バイト数 (ADR 0011)。 |
-| `MAX_TEXT_CLIP_BYTES` | `"1048576"` | テキスト/Markdown クリップで許可する最大本文バイト数 (#176)。 |
+| `MAX_TEXT_CLIP_BYTES` | `"1048576"` | 許可する最大バイト数。テキスト/Markdown クリップの本文と、URL・画像クリップの title/note/selection/tags/url フィールドに共通で適用される (#176)。 |
 | `ENABLE_SUMMARY` | `"true"` | 要約を有効にします。 |
 | `ENABLE_AUTO_TAGS` | `"false"` | 手動タグがない場合に LLM タグを生成します。旧名 `ENABLE_AUTO_TAG` も受け付けます。 |
 | `AUTO_TAGS_ALLOWLIST` | `""` | 追加の固定ホスト名タグ。例: `zenn.dev:zenn,github.com:github`。 |
