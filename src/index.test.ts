@@ -2390,6 +2390,120 @@ describe('POST /clip - fetch failure invariant', () => {
   })
 })
 
+// ─────────── Integration: article body size limit (#203) ───────────
+//
+// title/note/selection/url/tags は MAX_TEXT_CLIP_BYTES 超過時に 413 で
+// 拒否するが (#178/#189)、Jina/Browser Rendering から取得する記事本文
+// articleMd にはこのチェックが漏れていた。取得元は第三者サイトで
+// クライアントが制御できないため、超過時は 413 ではなく fetch 失敗と
+// 同じ「URL とメモだけ保存」フォールバック(200 + webhook 通知)に倒す。
+describe('POST /clip - article body size limit (#203)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('falls back to URL/note-only save (200) when the fetched article body exceeds MAX_TEXT_CLIP_BYTES, and notifies the webhook', async () => {
+    const testEnv = env as typeof env & {
+      MAX_TEXT_CLIP_BYTES?: string
+      NOTIFY_WEBHOOK_URL?: string
+    }
+    const original = {
+      maxBytes: testEnv.MAX_TEXT_CLIP_BYTES,
+      notify: testEnv.NOTIFY_WEBHOOK_URL,
+    }
+    testEnv.MAX_TEXT_CLIP_BYTES = '200'
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response(`Title: T\n\n${'x'.repeat(1000)}`, {
+          status: 200,
+        })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    const url = 'https://example.com/article-body-too-large-1'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url, note: 'keep me' }),
+      })
+
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as { ok: boolean; path: string }
+      expect(json.ok).toBe(true)
+
+      const stored = await env.VAULT.get(json.path)
+      expect(stored).not.toBeNull()
+      // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+      const content = await stored!.text()
+      expect(content).toContain(url)
+      expect(content).toContain('keep me')
+      // oversized article body itself must not be written to R2
+      expect(content).not.toContain('x'.repeat(1000))
+      expect(content).toContain('article body too large')
+
+      expect(
+        notified.some((b) => b.includes('本文取得失敗')),
+        `本文取得失敗の通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original.maxBytes
+      testEnv.NOTIFY_WEBHOOK_URL = original.notify
+    }
+  })
+
+  it('saves the article body as-is when it is within MAX_TEXT_CLIP_BYTES', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '1000000'
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: T\n\nsmall body', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    const url = 'https://example.com/article-body-within-limit-1'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url }),
+      })
+
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as { ok: boolean; path: string }
+      expect(json.ok).toBe(true)
+
+      const stored = await env.VAULT.get(json.path)
+      expect(stored).not.toBeNull()
+      // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+      const content = await stored!.text()
+      expect(content).toContain('small body')
+      expect(content).not.toContain('article body too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+})
+
 // ─────────── Integration: auto-tagging (allowlist, ENABLE_AUTO_TAGS off in test env) ───────────
 
 describe('POST /clip - auto tagging', () => {
