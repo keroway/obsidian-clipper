@@ -391,7 +391,7 @@ Jina Reader and summary failures do not change the response to an error status f
 | `INBOX_FOLDER` | `"Inbox"` | Destination folder relative to the vault root. |
 | `ATTACHMENTS_FOLDER` | `"Attachments"` | Destination folder for image clips, relative to the vault root (ADR 0011). |
 | `MAX_IMAGE_BYTES` | `"10485760"` | Maximum accepted image size in bytes for image clips (ADR 0011). |
-| `MAX_TEXT_CLIP_BYTES` | `"1048576"` | Maximum accepted body size in bytes for text/markdown clips (#176). |
+| `MAX_TEXT_CLIP_BYTES` | `"1048576"` | Maximum accepted size in bytes, shared by the text/markdown clip body and the title/note/selection/tags/url fields of URL and image clips (#176). |
 | `ENABLE_SUMMARY` | `"true"` | Enables summarization. |
 | `ENABLE_AUTO_TAGS` | `"false"` | Generates LLM tags when no manual tags are supplied. The legacy name `ENABLE_AUTO_TAG` is also accepted. |
 | `AUTO_TAGS_ALLOWLIST` | `""` | Additional fixed hostname tags, for example `zenn.dev:zenn,github.com:github`. |
