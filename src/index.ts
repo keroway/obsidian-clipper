@@ -207,10 +207,18 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 
   // ---- 1. 本文取得 (Jina Reader + リトライ + Browser Rendering フォールバック) ----
   const article = await fetchArticle(url, c.env)
-  const articleMd = article.md
   const articleTitle: string | undefined =
     payload.title?.trim() || article.title
-  const fetchErr = article.err
+  let articleMd = article.md
+  let fetchErr = article.err
+  // title/note/selection/url/tags と違い、articleMd はサイズ超過を 413 で
+  // 弾かない (#203)。取得元は第三者サイトでクライアントが制御できないため、
+  // 本文取得失敗と同じ「URL とメモだけ保存」フォールバックに寄せる方が
+  // 失敗ポリシー (本文取得失敗を握り潰して 200 を返す) と整合する。
+  if (!fetchErr && new TextEncoder().encode(articleMd).length > maxFieldBytes) {
+    fetchErr = `article body too large (> ${maxFieldBytes} bytes)`
+    articleMd = ''
+  }
   if (fetchErr && c.env.NOTIFY_WEBHOOK_URL) {
     c.executionCtx.waitUntil(
       notifyWebhook(
