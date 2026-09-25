@@ -84,5 +84,11 @@ export const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MiB
 
 export function resolveMaxImageBytes(raw: string | undefined): number {
   const n = raw ? Number(raw) : Number.NaN
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_IMAGE_BYTES
+  if (Number.isFinite(n) && n > 0) return n
+  if (raw) {
+    console.warn(
+      `MAX_IMAGE_BYTES is invalid (${JSON.stringify(raw)}); falling back to default ${DEFAULT_MAX_IMAGE_BYTES}`,
+    )
+  }
+  return DEFAULT_MAX_IMAGE_BYTES
 }
