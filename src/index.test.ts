@@ -554,8 +554,9 @@ describe('classifyJsonBody', () => {
     expect(result?.droppedTags).toBe(false)
   })
 
-  it('文字列でない title / note / selection を undefined にする', () => {
+  it('文字列でない title / note / selection を undefined にし、droppedFields に積む', () => {
     // 以前は素通りし、`payload.title?.trim()` が実行時に落ちて 500 になっていた。
+    // #209: 破棄の事実が droppedTags のように可視化されていなかった。
     const result = classifyJsonBody({
       url: 'https://example.com/a',
       title: 123,
@@ -566,6 +567,18 @@ describe('classifyJsonBody', () => {
     expect(result?.body.title).toBeUndefined()
     expect(result?.kind === 'url' && result.body.selection).toBeUndefined()
     expect(result?.body.note).toBeUndefined()
+    expect(result?.droppedFields.sort()).toEqual(['note', 'selection', 'title'])
+  })
+
+  it('文字列のフィールドは droppedFields を立てない', () => {
+    const result = classifyJsonBody({
+      url: 'https://example.com/a',
+      title: 'ok title',
+      note: 'ok note',
+      selection: 'ok selection',
+    })
+
+    expect(result?.droppedFields).toEqual([])
   })
 
   it('text クリップでも同じ検証が効く', () => {
@@ -2853,6 +2866,51 @@ describe('POST /clip - auto tagging', () => {
       expect(
         notified.some((b) => b.includes('tags に不正な値')),
         `droppedTags の通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = original
+      warnSpy.mockRestore()
+    }
+  })
+
+  /// title/note/selection に非文字列が送られて droppedFields になったとき、
+  /// tags と同じく webhook へ通知すること (#209)。以前は console.warn すら無く、
+  /// 破棄の事実がどこにも残らなかった。
+  it('notifies the webhook when title/note/selection are invalid and dropped', async () => {
+    const testEnv = env as typeof env & { NOTIFY_WEBHOOK_URL?: string }
+    const original = testEnv.NOTIFY_WEBHOOK_URL
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('Title: T\n\nBody content here.', { status: 200 })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/dropped-fields-notify-1',
+          title: 123,
+        }),
+      })
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
+      expect(
+        notified.some((b) => b.includes('title') && b.includes('不正な値')),
+        `droppedFields の通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
     } finally {
       testEnv.NOTIFY_WEBHOOK_URL = original
