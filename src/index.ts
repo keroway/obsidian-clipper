@@ -143,6 +143,22 @@ app.post('/clip', async (c) => {
       )
     }
   }
+  if (classified.droppedFields.length > 0) {
+    // tags (#75/#133) と同じく、title/note/selection/markdown/text に非文字列値が
+    // 来ても以前は silent に undefined へ落とすだけで、警告・通知が無かった (#209)。
+    const target =
+      classified.kind === 'url' ? classified.body.url : 'text/markdown clip'
+    const fields = classified.droppedFields.join(', ')
+    console.warn(`clip: ${fields} に不正な値が含まれていたため無視しました`)
+    if (c.env.NOTIFY_WEBHOOK_URL) {
+      c.executionCtx.waitUntil(
+        notifyWebhook(
+          c.env.NOTIFY_WEBHOOK_URL,
+          `[obsidian-clipper] ${fields} に不正な値が含まれていたため無視しました: ${target}`,
+        ),
+      )
+    }
+  }
   return classified.kind === 'url'
     ? await handleUrlClip(c, classified.body)
     : await handleTextClip(c, classified.body)
