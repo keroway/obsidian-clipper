@@ -18,7 +18,13 @@ export const DEFAULT_MAX_TEXT_CLIP_BYTES = 1 * 1024 * 1024 // 1 MiB
 
 export function resolveMaxTextClipBytes(raw: string | undefined): number {
   const n = raw ? Number(raw) : Number.NaN
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_TEXT_CLIP_BYTES
+  if (Number.isFinite(n) && n > 0) return n
+  if (raw) {
+    console.warn(
+      `MAX_TEXT_CLIP_BYTES is invalid (${JSON.stringify(raw)}); falling back to default ${DEFAULT_MAX_TEXT_CLIP_BYTES}`,
+    )
+  }
+  return DEFAULT_MAX_TEXT_CLIP_BYTES
 }
 
 // title/note/selection はクライアント制御可能な任意長の文字列で、本文と同じく

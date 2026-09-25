@@ -3079,6 +3079,22 @@ describe('resolveMaxImageBytes', () => {
   it('正の数はそのまま使う', () => {
     expect(resolveMaxImageBytes('1024')).toBe(1024)
   })
+
+  it('不正な値が設定されているときは console.warn で可視化する（#210）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveMaxImageBytes('abc')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('MAX_IMAGE_BYTES')
+    warn.mockRestore()
+  })
+
+  it('未設定/空文字なら console.warn を出さない（通常運用のログを汚さない）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveMaxImageBytes(undefined)
+    resolveMaxImageBytes('')
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
 })
 
 describe('resolveMaxTextClipBytes', () => {
@@ -3099,6 +3115,22 @@ describe('resolveMaxTextClipBytes', () => {
 
   it('正の数はそのまま使う', () => {
     expect(resolveMaxTextClipBytes('1024')).toBe(1024)
+  })
+
+  it('不正な値が設定されているときは console.warn で可視化する（#210）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveMaxTextClipBytes('abc')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('MAX_TEXT_CLIP_BYTES')
+    warn.mockRestore()
+  })
+
+  it('未設定/空文字なら console.warn を出さない（通常運用のログを汚さない）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveMaxTextClipBytes(undefined)
+    resolveMaxTextClipBytes('')
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 })
 
