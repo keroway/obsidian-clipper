@@ -1478,6 +1478,25 @@ describe('summarizeWithProvider', () => {
     expect(run).toHaveBeenCalledTimes(1)
   })
 
+  // #213: SUMMARY_PROVIDER=anthropic だが ANTHROPIC_API_KEY が未設定のとき、
+  // 従来は無警告で workers-ai に直行していた。運用者が設定漏れに気づけるよう
+  // console.warn することを確認する。
+  it('warns and falls back to workers-ai when SUMMARY_PROVIDER=anthropic but key is missing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { env: testEnv, run } = workersAiEnv('workers-ai summary')
+    const result = await summarizeWithProvider(
+      { ...testEnv, SUMMARY_PROVIDER: 'anthropic' } as Bindings,
+      'body text',
+      'Title',
+    )
+
+    expect(result).toBe('workers-ai summary')
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/ANTHROPIC_API_KEY.*not set/),
+    )
+  })
+
   it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       if (input.toString() === 'https://api.anthropic.com/v1/messages') {
@@ -1615,6 +1634,24 @@ describe('generateTags', () => {
 
     expect(tags).toEqual(['tag1', 'tag2'])
     expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  // #213: summarizeWithProvider と同じく、キー欠落時は無警告で workers-ai に
+  // 直行していた。console.warn することを確認する。
+  it('warns and falls back to workers-ai when SUMMARY_PROVIDER=anthropic but key is missing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { env: testEnv, run } = workersAiEnv('tag1, tag2')
+    const tags = await generateTags(
+      { ...testEnv, SUMMARY_PROVIDER: 'anthropic' } as Bindings,
+      'body text',
+      'Title',
+    )
+
+    expect(tags).toEqual(['tag1', 'tag2'])
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/ANTHROPIC_API_KEY.*not set/),
+    )
   })
 
   it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
