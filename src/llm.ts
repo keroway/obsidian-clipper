@@ -16,6 +16,11 @@ export async function summarizeWithProvider(
   title: string | undefined,
 ): Promise<string> {
   const workersAiModel = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct'
+  if (env.SUMMARY_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+    console.warn(
+      'SUMMARY_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set, falling back to workers-ai',
+    )
+  }
   if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
     const anthropicModel = env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL
     try {
@@ -92,6 +97,11 @@ export async function generateTags(
   title: string | undefined,
 ): Promise<string[]> {
   const userPrompt = buildSummaryUserPrompt(md, title)
+  if (env.SUMMARY_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+    console.warn(
+      'SUMMARY_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set, falling back to workers-ai',
+    )
+  }
   if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
     try {
       const text = await anthropicComplete(
