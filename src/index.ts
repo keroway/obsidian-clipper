@@ -36,6 +36,7 @@ import { bearerAuth } from 'hono/bearer-auth'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
 import { timingSafeEqual } from 'hono/utils/buffer'
+import { resolveMaxImageBytes } from './attachment'
 import type { Bindings } from './bindings'
 import {
   classifyJsonBody,
@@ -358,10 +359,36 @@ async function handleTextClip(c: AppContext, payload: TextClipBody) {
   return c.json({ ok: true, ...result })
 }
 
+// multipart の boundary・パート見出し・title/note/tags フィールド分の
+// 安全マージン。画像本体以外にどれだけ載るかは正確には分からないため、
+// 「image 上限 + テキスト系フィールド 3 つ分の上限 + 定数マージン」を
+// 事前拒否の閾値として使う (#215)。
+const MULTIPART_OVERHEAD_BYTES = 8 * 1024
+
 // ---- 画像クリップ (multipart/form-data, ADR 0011) ----
 // multipart パース・重複検知・R2 書き込み・インデックス更新・埋め込みノート生成は
 // src/image-clip.ts に委譲する。ここでは formData 取得とレスポンス整形のみ行う。
 async function handleImageClip(c: AppContext) {
+  // Content-Length が上限を明らかに超えている場合は multipart 全体の
+  // パース(formData())に進む前に 413 を返す。file.size による上限判定
+  // (src/image-clip.ts) はパース完了後にしか走らず、それより前の受信・
+  // パースコストを避けられなかった (#215)。ヘッダが無い/不正で判定できない
+  // 場合はここでは弾かず、既存の file.size チェックに委ねる (迂回はできない)。
+  const contentLength = Number(c.req.header('content-length'))
+  if (Number.isFinite(contentLength)) {
+    const maxImageBytes = resolveMaxImageBytes(c.env.MAX_IMAGE_BYTES)
+    const maxFieldBytes = resolveMaxTextClipBytes(c.env.MAX_TEXT_CLIP_BYTES)
+    const precheckLimit =
+      maxImageBytes + 3 * maxFieldBytes + MULTIPART_OVERHEAD_BYTES
+    if (contentLength > precheckLimit) {
+      // 413 を投げる前にリクエストボディを cancel しておく。未消費のまま
+      // 応答を返すと、テスト環境 (workerd) が別スレッドで body の破棄を検知して
+      // unhandled rejection を発生させることがある。
+      await c.req.raw.body?.cancel()
+      throw new HTTPException(413, { message: 'request body too large' })
+    }
+  }
+
   let form: FormData
   try {
     form = await c.req.formData()
