@@ -3366,6 +3366,36 @@ describe('POST /clip - image clip', () => {
     }
   })
 
+  /// 宣言された Content-Length が (MAX_IMAGE_BYTES + テキストフィールド上限 ×3 +
+  /// マージン) を明らかに超える場合、multipart 全体のパース前に 413 を返すこと
+  /// (#215)。MAX_IMAGE_BYTES/MAX_TEXT_CLIP_BYTES を小さく縮めて閾値を下げ、
+  /// 実際に閾値を超えるサイズの (正しい形式の) 画像を送って確認する。
+  it('宣言サイズが上限を超える場合、multipart パース前に 413 を返す', async () => {
+    const testEnv = env as typeof env & {
+      MAX_IMAGE_BYTES?: string
+      MAX_TEXT_CLIP_BYTES?: string
+    }
+    const originalImage = testEnv.MAX_IMAGE_BYTES
+    const originalText = testEnv.MAX_TEXT_CLIP_BYTES
+    // precheck の閾値は 4 + 3*4 + 8192 = 8208 バイト。20000 バイトの画像を
+    // 乗せた multipart 本体は Content-Length がこれを大きく超える。
+    testEnv.MAX_IMAGE_BYTES = '4'
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const bigBytes = new Uint8Array(20000)
+      bigBytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+      const res = await postImage({}, 'precheck-too-large.png', bigBytes)
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('too large')
+    } finally {
+      testEnv.MAX_IMAGE_BYTES = originalImage
+      testEnv.MAX_TEXT_CLIP_BYTES = originalText
+    }
+  })
+
   it('saves an image under Attachments/ without an embed note by default', async () => {
     const res = await postImage({}, 'unique-shot-1.png', pngBytes(10))
     expect(res.status).toBe(200)
