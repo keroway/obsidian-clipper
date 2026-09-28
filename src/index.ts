@@ -223,7 +223,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   }
 
   // ---- 1. 本文取得 (Jina Reader + リトライ + Browser Rendering フォールバック) ----
-  const article = await fetchArticle(url, c.env)
+  const article = await fetchArticle(url, c.env, maxFieldBytes)
   const articleTitle: string | undefined =
     payload.title?.trim() || article.title
   let articleMd = article.md
