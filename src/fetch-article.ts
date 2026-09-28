@@ -1,4 +1,5 @@
 import type { Bindings } from './bindings'
+import { DEFAULT_MAX_TEXT_CLIP_BYTES } from './text-clip'
 
 export type FetchedArticle = {
   md: string
@@ -20,6 +21,42 @@ function extractJinaTitle(md: string): string | undefined {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+const bodyTooLargeMessage = (maxBytes: number) =>
+  `article body too large (> ${maxBytes} bytes)`
+
+/**
+ * 応答本文を maxBytes までしか読まない (#222)。Content-Length が上限超過なら
+ * 読み始めず、無ければストリームを逐次カウントして超過時点で cancel する。
+ * 上限超過は null で返す (throw すると呼び出し側のリトライ/フォールバック経路に
+ * 乗ってしまうため)。
+ */
+async function readTextWithLimit(
+  res: Response,
+  maxBytes: number,
+): Promise<string | null> {
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => {})
+    return null
+  }
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let received = 0
+  let text = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.byteLength
+    if (received > maxBytes) {
+      await reader.cancel().catch(() => {})
+      return null
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+  return text + decoder.decode()
+}
+
 /**
  * 本文取得。Jina Reader を指数バックオフでリトライ (429/503 のみ) し、
  * 最終的に失敗したら Browser Rendering の /markdown にフォールバックする。
@@ -28,10 +65,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * フォールバックは ADR 0007 の定義どおり「Jina が 429/503 (または fetch 例外)
  * で最終的に失敗したとき」だけ発火する。404 等の非リトライ対象ステータスで
  * break した場合はフォールバックしない (#110)。
+ *
+ * 応答本文は maxBytes (既定 MAX_TEXT_CLIP_BYTES 相当) を超えた時点で読み取りを
+ * 打ち切り、{ md: '', err: 'article body too large ...' } を返す (#222)。
+ * 上限超過はリトライもフォールバックもしない (別経路でも同じ本文が返るため)。
  */
 export async function fetchArticle(
   url: string,
   env: Bindings,
+  maxBytes: number = DEFAULT_MAX_TEXT_CLIP_BYTES,
 ): Promise<FetchedArticle> {
   let lastErr: string | undefined
   let retryableFailure = false
@@ -48,7 +90,12 @@ export async function fetchArticle(
       )
       try {
         if (res.ok) {
-          const md = await res.text()
+          const md = await readTextWithLimit(res, maxBytes)
+          if (md === null) {
+            lastErr = bodyTooLargeMessage(maxBytes)
+            retryableFailure = false
+            break
+          }
           if (md.trim() === '') {
             // 空本文の 200 は成功扱いにしない (#149): 失敗説明・通知経路に
             // 接続するため err を設定して抜ける。429/503 ではないので
@@ -104,13 +151,17 @@ export async function fetchArticle(
       `fetch fallback: trying browser-rendering for ${url} (jina: ${lastErr ?? 'failed'})`,
     )
     try {
-      const md = await fetchViaBrowserRendering(url, env)
-      if (md) {
+      const md = await fetchViaBrowserRendering(url, env, maxBytes)
+      if (md === null) {
+        lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${bodyTooLargeMessage(maxBytes)}`
+        console.log(`fetch fallback: browser-rendering too large for ${url}`)
+      } else if (md) {
         console.log(`fetch fallback: browser-rendering succeeded for ${url}`)
         return { md, title: extractJinaTitle(md), via: 'browser-rendering' }
+      } else {
+        lastErr = `${lastErr ?? 'jina failed'}; browser-rendering empty`
+        console.log(`fetch fallback: browser-rendering empty for ${url}`)
       }
-      lastErr = `${lastErr ?? 'jina failed'}; browser-rendering empty`
-      console.log(`fetch fallback: browser-rendering empty for ${url}`)
     } catch (e) {
       lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${(e as Error).message}`
       console.log(
@@ -156,7 +207,8 @@ async function fetchWithTimeout(
 async function fetchViaBrowserRendering(
   url: string,
   env: Bindings,
-): Promise<string> {
+  maxBytes: number,
+): Promise<string | null> {
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/browser-rendering/markdown`
   const { res, clear } = await fetchWithTimeout(
     endpoint,
@@ -176,7 +228,10 @@ async function fetchViaBrowserRendering(
       throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
     }
     // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
-    const data = (await res.json()) as {
+    // JSON エンベロープ分を含む生バイト数で上限判定する (#222)。
+    const raw = await readTextWithLimit(res, maxBytes)
+    if (raw === null) return null
+    const data = JSON.parse(raw) as {
       success?: boolean
       result?: string | { markdown?: string }
       errors?: unknown

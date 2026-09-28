@@ -1187,6 +1187,89 @@ describe('fetchArticle', () => {
     expect(r.err).toBeUndefined()
   })
 
+  // 応答本文の読み取り上限 (#222)。境界値: ちょうど maxBytes は許可、+1 は拒否。
+  it('accepts a Jina body of exactly maxBytes and rejects maxBytes + 1', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('x'.repeat(100), { status: 200 }),
+    )
+    const ok = await fetchArticle('https://example.com/edge', jinaOnlyEnv, 100)
+    expect(ok.err).toBeUndefined()
+    expect(ok.md).toHaveLength(100)
+
+    const over = await fetchArticle('https://example.com/edge', jinaOnlyEnv, 99)
+    expect(over.md).toBe('')
+    expect(over.err).toContain('article body too large')
+  })
+
+  it('stops reading the Jina stream once maxBytes is exceeded, without retry or fallback', async () => {
+    let pulled = 0
+    let cancelled = false
+    let calls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      calls++
+      const chunk = new TextEncoder().encode('x'.repeat(100))
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled++
+          controller.enqueue(chunk)
+        },
+        cancel() {
+          cancelled = true
+        },
+      })
+      return new Response(stream, { status: 200 })
+    })
+
+    const r = await fetchArticle(
+      'https://example.com/huge',
+      {
+        CF_ACCOUNT_ID: 'acc-123',
+        BROWSER_RENDERING_API_TOKEN: 'br-token',
+      } as Bindings,
+      250,
+    )
+    expect(r.md).toBe('')
+    expect(r.err).toContain('article body too large')
+    expect(cancelled).toBe(true)
+    // 無限ストリームでも数チャンクで止まる
+    expect(pulled).toBeLessThan(10)
+    // リトライ・Browser Rendering フォールバックは発火しない
+    expect(calls).toBe(1)
+  })
+
+  it('rejects an oversized Content-Length without reading the body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response('x'.repeat(50), {
+          status: 200,
+          headers: { 'content-length': '5000' },
+        }),
+    )
+    const r = await fetchArticle('https://example.com/cl', jinaOnlyEnv, 100)
+    expect(r.md).toBe('')
+    expect(r.err).toContain('article body too large')
+  })
+
+  it('rejects an oversized Browser Rendering response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('busy', { status: 503 })
+      }
+      return new Response(
+        JSON.stringify({ success: true, result: 'y'.repeat(500) }),
+        { status: 200 },
+      )
+    })
+    const brEnv2 = {
+      CF_ACCOUNT_ID: 'acc-123',
+      BROWSER_RENDERING_API_TOKEN: 'br-token',
+    } as Bindings
+    const r = await fetchArticle('https://example.com/br', brEnv2, 200)
+    expect(r.md).toBe('')
+    expect(r.err).toContain('browser-rendering article body too large')
+  })
+
   it('sends Authorization: Bearer header when JINA_API_KEY is set', async () => {
     let capturedHeaders: HeadersInit | undefined
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -1421,16 +1504,15 @@ describe('fetchArticle', () => {
         const u = input.toString()
         if (u.startsWith('https://r.jina.ai/')) {
           const signal = init?.signal as AbortSignal
-          return {
-            ok: true,
-            status: 200,
-            text: () =>
-              new Promise<string>((_resolve, reject) => {
-                signal.addEventListener('abort', () =>
-                  reject(new Error('aborted')),
-                )
-              }),
-          } as unknown as Response
+          // 本文が永久に届かないストリーム。abort されたら error にする。
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              signal.addEventListener('abort', () =>
+                controller.error(new Error('aborted')),
+              )
+            },
+          })
+          return new Response(stream, { status: 200 })
         }
         return new Response('nope', { status: 404 })
       })
