@@ -3,7 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 このリポジトリは Cloudflare Worker (Hono + TypeScript) の小さな Read It Later パイプライン。
-利用者向け手順は `README.md`、未実装 TODO とロードマップは `HANDOFF.md` にある。
+利用者向け手順は `README.md` にある。設計判断の正典は `docs/adr/`、未実装の課題は `plans/` と GitHub Issue を参照する
+（`HANDOFF.md` は MVP 時点の歴史的記録で、未実装リストではない）。
 本ファイルは「読まないと分からない設計前提」と最低限の開発コマンドだけを置く。
 
 ## ツールチェーン
