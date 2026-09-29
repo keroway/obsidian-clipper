@@ -1,5 +1,6 @@
 import type { Bindings } from './bindings'
 import { DEFAULT_MAX_TEXT_CLIP_BYTES } from './text-clip'
+import { hostname } from './url'
 
 export type FetchedArticle = {
   md: string
@@ -147,25 +148,27 @@ export async function fetchArticle(
     env.CF_ACCOUNT_ID &&
     env.BROWSER_RENDERING_API_TOKEN
   ) {
+    // ログには URL 全体を出さない (パス/クエリに利用者固有の値が入りうる, #224)。
+    const host = hostname(url)
     console.log(
-      `fetch fallback: trying browser-rendering for ${url} (jina: ${lastErr ?? 'failed'})`,
+      `fetch fallback: trying browser-rendering for ${host} (jina: ${lastErr ?? 'failed'})`,
     )
     try {
       const md = await fetchViaBrowserRendering(url, env, maxBytes)
       if (md === null) {
         lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${bodyTooLargeMessage(maxBytes)}`
-        console.log(`fetch fallback: browser-rendering too large for ${url}`)
+        console.log(`fetch fallback: browser-rendering too large for ${host}`)
       } else if (md) {
-        console.log(`fetch fallback: browser-rendering succeeded for ${url}`)
+        console.log(`fetch fallback: browser-rendering succeeded for ${host}`)
         return { md, title: extractJinaTitle(md), via: 'browser-rendering' }
       } else {
         lastErr = `${lastErr ?? 'jina failed'}; browser-rendering empty`
-        console.log(`fetch fallback: browser-rendering empty for ${url}`)
+        console.log(`fetch fallback: browser-rendering empty for ${host}`)
       }
     } catch (e) {
       lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${(e as Error).message}`
       console.log(
-        `fetch fallback: browser-rendering failed for ${url} (${(e as Error).message})`,
+        `fetch fallback: browser-rendering failed for ${host} (${(e as Error).message})`,
       )
     }
   }
