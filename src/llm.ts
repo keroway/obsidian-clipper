@@ -1,4 +1,5 @@
 import type { Bindings } from './bindings'
+import { readErrorSnippet } from './error-body'
 import {
   AUTO_TAG_SYSTEM_PROMPT,
   buildSummaryUserPrompt,
@@ -178,10 +179,8 @@ async function anthropicComplete(
       signal: controller.signal,
     })
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(
-        `anthropic ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
-      )
+      const text = await readErrorSnippet(res)
+      throw new Error(`anthropic ${res.status}${text ? `: ${text}` : ''}`)
     }
     const data = (await res.json()) as {
       content?: Array<{ type: string; text?: string }>
