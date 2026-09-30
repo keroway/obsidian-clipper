@@ -1362,7 +1362,9 @@ describe('fetchArticle', () => {
     await fetchArticle('https://example.com/c?token=secret-value', brEnv)
 
     const lines = log.mock.calls.map((c) => c.join(' '))
-    expect(lines.some((l) => l.includes('example.com'))).toBe(true)
+    expect(lines).toContain(
+      'fetch fallback: browser-rendering succeeded for example.com',
+    )
     expect(lines.join('\n')).not.toContain('secret-value')
   })
 
