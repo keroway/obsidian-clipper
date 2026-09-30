@@ -1346,6 +1346,28 @@ describe('fetchArticle', () => {
     expect(r.err).toBeUndefined()
   })
 
+  it('does not log the full clip URL on browser-rendering fallback (#224)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('rate', { status: 429 })
+      }
+      return new Response(
+        JSON.stringify({ success: true, result: 'Title: BR\n\nFrom BR.' }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await fetchArticle('https://example.com/c?token=secret-value', brEnv)
+
+    const lines = log.mock.calls.map((c) => c.join(' '))
+    expect(lines).toContain(
+      'fetch fallback: browser-rendering succeeded for example.com',
+    )
+    expect(lines.join('\n')).not.toContain('secret-value')
+  })
+
   it('returns empty md + err when every path fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const u = input.toString()
