@@ -240,7 +240,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     c.executionCtx.waitUntil(
       notifyWebhook(
         c.env.NOTIFY_WEBHOOK_URL,
-        `[obsidian-clipper] 本文取得失敗: ${url} (${fetchErr})`,
+        `[obsidian-clipper] 本文取得失敗: ${hostname(url)} (${fetchErr})`,
       ),
     )
   }
@@ -261,7 +261,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
             c.executionCtx.waitUntil(
               notifyWebhook(
                 c.env.NOTIFY_WEBHOOK_URL,
-                `[obsidian-clipper] 要約失敗: ${url} (${(e as Error).message})`,
+                `[obsidian-clipper] 要約失敗: ${hostname(url)} (${(e as Error).message})`,
               ),
             )
           }
@@ -280,7 +280,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
             c.executionCtx.waitUntil(
               notifyWebhook(
                 c.env.NOTIFY_WEBHOOK_URL,
-                `[obsidian-clipper] タグ生成失敗: ${url} (${(e as Error).message})`,
+                `[obsidian-clipper] タグ生成失敗: ${hostname(url)} (${(e as Error).message})`,
               ),
             )
           }

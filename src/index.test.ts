@@ -2645,7 +2645,8 @@ describe('POST /clip - article body size limit (#203)', () => {
       return new Response('upstream error', { status: 500 })
     })
 
-    const url = 'https://example.com/article-body-too-large-1'
+    // クエリ値は通知 (webhook) に載せない (#231)
+    const url = 'https://example.com/article-body-too-large-1?token=SECRET231'
     try {
       const res = await SELF.fetch('http://example.com/clip', {
         method: 'POST',
@@ -2674,6 +2675,7 @@ describe('POST /clip - article body size limit (#203)', () => {
         notified.some((b) => b.includes('本文取得失敗')),
         `本文取得失敗の通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
+      expect(notified.some((b) => b.includes('SECRET231'))).toBe(false)
     } finally {
       testEnv.MAX_TEXT_CLIP_BYTES = original.maxBytes
       testEnv.NOTIFY_WEBHOOK_URL = original.notify
