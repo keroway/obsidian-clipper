@@ -1,3 +1,5 @@
+import { readErrorSnippet } from './error-body'
+
 // webhook への通知。**この関数自身の失敗は通知できない**（通知経路が壊れている
 // ときに使うため）ので、ログに残すのが唯一の手段になる。
 //
@@ -28,15 +30,10 @@ export async function notifyWebhook(
   }
 }
 
-// エラー本文の読み取りで**さらに失敗しても**元のエラー報告を潰さない。
-// 長い HTML が返ることもあるので切り詰める。
+// エラー本文の読み取りで**さらに失敗しても**元のエラー報告を潰さない
+// （readErrorSnippet は失敗時に空文字を返す）。長い HTML が返ることもあるので、
+// 全量を読まずバイト上限付きで先頭だけ読む (#229)。
 async function safeReadBody(res: Response): Promise<string> {
-  try {
-    const text = await res.text()
-    if (!text) return ''
-    const trimmed = text.length > 200 ? `${text.slice(0, 200)}…` : text
-    return ` — ${trimmed}`
-  } catch {
-    return ''
-  }
+  const text = await readErrorSnippet(res)
+  return text ? ` — ${text}` : ''
 }

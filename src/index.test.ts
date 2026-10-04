@@ -1952,7 +1952,32 @@ describe('notifyWebhook', () => {
 
     const logged = String(warn.mock.calls[0]?.[0])
     expect(logged.length).toBeLessThan(300)
-    expect(logged).toContain('…')
+    expect(logged).toContain('x'.repeat(200))
+    expect(logged).not.toContain('x'.repeat(201))
+  })
+
+  it('巨大な本文は上限バイトで cancel し、全量を読まない（#229）', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let pulled = 0
+    let cancelled = false
+    const chunk = new TextEncoder().encode('x'.repeat(1024))
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++
+        controller.enqueue(chunk)
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(body, { status: 500 }),
+    )
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    expect(cancelled).toBe(true)
+    expect(pulled).toBeLessThan(10)
   })
 
   it('2xx なら警告を出さない', async () => {
