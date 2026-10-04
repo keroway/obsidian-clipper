@@ -1,4 +1,5 @@
 import type { Bindings } from './bindings'
+import { readErrorSnippet } from './error-body'
 import { DEFAULT_MAX_TEXT_CLIP_BYTES } from './text-clip'
 import { hostname } from './url'
 
@@ -227,8 +228,8 @@ async function fetchViaBrowserRendering(
   )
   try {
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+      const text = await readErrorSnippet(res)
+      throw new Error(`${res.status}${text ? `: ${text}` : ''}`)
     }
     // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
     // JSON エンベロープ分を含む生バイト数で上限判定する (#222)。

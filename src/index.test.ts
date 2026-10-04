@@ -17,6 +17,7 @@ import {
 } from './attachment'
 import type { Bindings } from './bindings'
 import { classifyJsonBody, detectContentKind } from './clip-input'
+import { readErrorSnippet } from './error-body'
 import { fetchArticle } from './fetch-article'
 import app from './index'
 import { generateTags, summarizeWithProvider } from './llm'
@@ -1002,6 +1003,42 @@ describe('readUrlIndex', () => {
     expect(index).toEqual({
       a: { path: 'Inbox/x.md', createdAt: '2026-01-01T00:00:00+09:00' },
     })
+  })
+})
+
+describe('readErrorSnippet（#225）', () => {
+  it('通常サイズの本文はそのまま返す', async () => {
+    expect(await readErrorSnippet(new Response('bad request'))).toBe(
+      'bad request',
+    )
+  })
+
+  it('200 文字を超える本文は 200 文字に切り詰める', async () => {
+    const out = await readErrorSnippet(new Response('a'.repeat(5000)))
+    expect(out).toBe('a'.repeat(200))
+  })
+
+  it('巨大な本文は上限バイトを読んだ時点で cancel し、全量を読まない', async () => {
+    let pulled = 0
+    let cancelled = false
+    const chunk = new TextEncoder().encode('x'.repeat(1024))
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++
+        controller.enqueue(chunk)
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const out = await readErrorSnippet(new Response(body))
+    expect(out).toBe('x'.repeat(200))
+    expect(cancelled).toBe(true)
+    expect(pulled).toBeLessThan(10)
+  })
+
+  it('body が無い応答は空文字', async () => {
+    expect(await readErrorSnippet(new Response(null))).toBe('')
   })
 })
 
