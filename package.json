@@ -29,7 +29,7 @@
     "wrangler": "^4.139.0"
   },
   "overrides": {
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "nanoid": "^3.3.19",
     "postcss": "^8.5.28",
     "undici": "^7.29.1"
