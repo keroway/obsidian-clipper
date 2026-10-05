@@ -366,9 +366,11 @@ Saved with `source: text-clip` frontmatter (no `source_url`), under `INBOX_FOLDE
 | `tags` | text field | No | Comma-separated tags for the optional embed note. |
 | `embed` | text field | No | Set to `1` (or supply `title`/`note`/`tags`) to also generate a companion note in `INBOX_FOLDER` embedding the image with `![[...]]`. Omitted by default — only the image is saved. |
 
+When an embed note is created, the response also includes `tags` (the final list saved in the note, after the cap is applied). Text clips always return `tags` as well.
+
 The image is saved as binary content under `ATTACHMENTS_FOLDER` (default `Attachments`). Duplicate detection is based on the SHA-1 hash of the image bytes, reusing the same index as URL clips; add `?refresh=1` to bypass it.
 
-If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is supplied, the image itself is not re-uploaded, but a new embed note is still created referencing the existing image (`{ ok: false, duplicate: true, path, embedded: true, notePath }`). Without an embed intent, a duplicate returns just `{ ok: false, duplicate: true, path, embedded: false }`.
+If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is supplied, the image itself is not re-uploaded, but a new embed note is still created referencing the existing image (`{ ok: false, duplicate: true, path, embedded: true, notePath, tags }`). Without an embed intent, a duplicate returns just `{ ok: false, duplicate: true, path, embedded: false }`.
 
 #### Response
 
