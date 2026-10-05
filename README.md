@@ -338,7 +338,9 @@ branches on `Content-Type` and body content to accept three kinds of input
 | `title` | `string` | No | Explicit title. If omitted, the extracted title is used when available (up to `MAX_TEXT_CLIP_BYTES`, default 1 MiB; #178). |
 | `selection` | `string` | No | Selected text from the page. Saved as a quote block (up to `MAX_TEXT_CLIP_BYTES`; #178). |
 | `note` | `string` | No | User note. Saved as a `> [!note]` callout (up to `MAX_TEXT_CLIP_BYTES`; #178). |
-| `tags` | `string[]` | No | Additional tags merged with `clipped`, allowlist tags, and optional LLM tags. |
+| `tags` | `string[]` | No | Additional tags merged with `clipped`, allowlist tags, and optional LLM tags (up to 100 entries; #237). |
+
+The whole JSON request body is capped at `6 × MAX_TEXT_CLIP_BYTES + 64 KiB` and rejected with `413` while reading, even without `Content-Length` (#237).
 
 Saved with `source: web-clip` frontmatter, under `INBOX_FOLDER`.
 
@@ -375,7 +377,7 @@ If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is suppl
 | `200` | Success JSON or duplicate JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' \| 'too many tags' \| 'request body too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 

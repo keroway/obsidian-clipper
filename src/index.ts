@@ -46,6 +46,7 @@ import {
 } from './clip-input'
 import { fetchArticle } from './fetch-article'
 import { saveImageClip } from './image-clip'
+import { jsonBodyLimit, readJsonWithLimit } from './json-body'
 import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
@@ -114,12 +115,11 @@ app.post('/clip', async (c) => {
     return handleImageClip(c)
   }
 
-  let payload: unknown
-  try {
-    payload = await c.req.json()
-  } catch {
-    throw new HTTPException(400, { message: 'invalid JSON body' })
-  }
+  // 解析前に総サイズを制限する (#237)。c.req.json() は全量を読んでしまう。
+  const payload = await readJsonWithLimit(
+    c.req.raw,
+    jsonBodyLimit(resolveMaxTextClipBytes(c.env.MAX_TEXT_CLIP_BYTES)),
+  )
   const classified = classifyJsonBody(payload)
   if (!classified) {
     throw new HTTPException(400, {

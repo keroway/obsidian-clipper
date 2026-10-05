@@ -20,6 +20,7 @@ import { classifyJsonBody, detectContentKind } from './clip-input'
 import { readErrorSnippet } from './error-body'
 import { fetchArticle } from './fetch-article'
 import app from './index'
+import { jsonBodyLimit, readJsonWithLimit } from './json-body'
 import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
@@ -32,6 +33,7 @@ import {
 } from './tags'
 import {
   DEFAULT_MAX_TEXT_CLIP_BYTES,
+  MAX_TAGS_COUNT,
   resolveMaxTextClipBytes,
 } from './text-clip'
 import { normalizeUrl } from './url'
@@ -3315,6 +3317,78 @@ describe('POST /clip - text/markdown clip', () => {
     } finally {
       testEnv.MAX_TEXT_CLIP_BYTES = original
     }
+  })
+
+  /// バイト数の合計だけでは空文字列の巨大配列が 0 バイトで通過していた（#237）。
+  it('空文字列を大量に並べた tags を要素数上限で 413 にする', async () => {
+    const res = await postJson({
+      text: 'ok',
+      tags: new Array(MAX_TAGS_COUNT + 1).fill(''),
+    })
+
+    expect(res.status).toBe(413)
+    const json = (await res.json()) as { ok: boolean; error: string }
+    expect(json.ok).toBe(false)
+    expect(json.error).toContain('too many tags')
+  })
+
+  /// 保存されない未使用フィールドでも解析前の総サイズ上限で弾く（#237）。
+  it('巨大な未使用フィールドを含む JSON を解析前に 413 で拒否する', async () => {
+    const testEnv = env as typeof env & { MAX_TEXT_CLIP_BYTES?: string }
+    const original = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const res = await postJson({
+        text: 'ok',
+        ignored: 'x'.repeat(jsonBodyLimit(4) + 1),
+      })
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.error).toContain('request body too large')
+    } finally {
+      testEnv.MAX_TEXT_CLIP_BYTES = original
+    }
+  })
+})
+
+describe('readJsonWithLimit（#237）', () => {
+  it('Content-Length が無くても読み取り中に上限を超えたら 413 を投げる', async () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"a":"'))
+        controller.enqueue(encoder.encode('x'.repeat(100)))
+        controller.enqueue(encoder.encode('"}'))
+        controller.close()
+      },
+    })
+    const req = new Request('http://example.com/clip', {
+      method: 'POST',
+      body: stream,
+      // @ts-expect-error duplex は lib.dom 型に未収録
+      duplex: 'half',
+    })
+
+    await expect(readJsonWithLimit(req, 50)).rejects.toMatchObject({
+      status: 413,
+    })
+  })
+
+  it('上限内の JSON はそのまま解析し、不正な JSON は 400 を投げる', async () => {
+    const ok = new Request('http://example.com/clip', {
+      method: 'POST',
+      body: '{"a":1}',
+    })
+    await expect(readJsonWithLimit(ok, 100)).resolves.toEqual({ a: 1 })
+
+    const bad = new Request('http://example.com/clip', {
+      method: 'POST',
+      body: '{',
+    })
+    await expect(readJsonWithLimit(bad, 100)).rejects.toMatchObject({
+      status: 400,
+    })
   })
 })
 

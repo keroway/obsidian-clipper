@@ -47,11 +47,19 @@ export function assertFieldWithinLimit(
 // (#180/#181) しか無く、配列全体のサイズには上限が無かった (#183)。画像クリップの
 // tagsField (multipart のカンマ区切り文字列) は assertFieldWithinLimit で保護済み
 // なので、JSON 経路も要素の合計バイト数で同じ上限を適用して揃える。
+//
+// バイト数の合計だけでは空文字列を大量に並べた配列が 0 バイトで通過するため、
+// 要素数にも上限を設ける (#237)。
+export const MAX_TAGS_COUNT = 100
+
 export function assertTagsWithinLimit(
   tags: string[] | undefined,
   maxBytes: number,
 ): void {
   if (!tags || tags.length === 0) return
+  if (tags.length > MAX_TAGS_COUNT) {
+    throw new HTTPException(413, { message: 'too many tags' })
+  }
   const totalBytes = tags.reduce(
     (sum, tag) => sum + new TextEncoder().encode(tag).length,
     0,
