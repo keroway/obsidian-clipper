@@ -46,7 +46,11 @@ import {
 } from './clip-input'
 import { fetchArticle } from './fetch-article'
 import { saveImageClip } from './image-clip'
-import { jsonBodyLimit, readJsonWithLimit } from './json-body'
+import {
+  jsonBodyLimit,
+  readBodyWithLimit,
+  readJsonWithLimit,
+} from './json-body'
 import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook } from './notify'
@@ -369,29 +373,21 @@ const MULTIPART_OVERHEAD_BYTES = 8 * 1024
 // multipart パース・重複検知・R2 書き込み・インデックス更新・埋め込みノート生成は
 // src/image-clip.ts に委譲する。ここでは formData 取得とレスポンス整形のみ行う。
 async function handleImageClip(c: AppContext) {
-  // Content-Length が上限を明らかに超えている場合は multipart 全体の
-  // パース(formData())に進む前に 413 を返す。file.size による上限判定
-  // (src/image-clip.ts) はパース完了後にしか走らず、それより前の受信・
-  // パースコストを避けられなかった (#215)。ヘッダが無い/不正で判定できない
-  // 場合はここでは弾かず、既存の file.size チェックに委ねる (迂回はできない)。
-  const contentLength = Number(c.req.header('content-length'))
-  if (Number.isFinite(contentLength)) {
-    const maxImageBytes = resolveMaxImageBytes(c.env.MAX_IMAGE_BYTES)
-    const maxFieldBytes = resolveMaxTextClipBytes(c.env.MAX_TEXT_CLIP_BYTES)
-    const precheckLimit =
-      maxImageBytes + 3 * maxFieldBytes + MULTIPART_OVERHEAD_BYTES
-    if (contentLength > precheckLimit) {
-      // 413 を投げる前にリクエストボディを cancel しておく。未消費のまま
-      // 応答を返すと、テスト環境 (workerd) が別スレッドで body の破棄を検知して
-      // unhandled rejection を発生させることがある。
-      await c.req.raw.body?.cancel()
-      throw new HTTPException(413, { message: 'request body too large' })
-    }
-  }
+  // multipart 全体のパース(formData())に進む前に、総本文サイズを上限と照合する。
+  // file.size による上限判定 (src/image-clip.ts) はパース完了後にしか走らず、
+  // それより前の受信・パースコストを避けられなかった (#215)。Content-Length が
+  // 無い/偽装されている場合も、ストリーム読み取り中の累積バイト数で打ち切る (#239)。
+  const maxImageBytes = resolveMaxImageBytes(c.env.MAX_IMAGE_BYTES)
+  const maxFieldBytes = resolveMaxTextClipBytes(c.env.MAX_TEXT_CLIP_BYTES)
+  const precheckLimit =
+    maxImageBytes + 3 * maxFieldBytes + MULTIPART_OVERHEAD_BYTES
+  const rawBody = await readBodyWithLimit(c.req.raw, precheckLimit)
 
   let form: FormData
   try {
-    form = await c.req.formData()
+    form = await new Response(rawBody, {
+      headers: { 'content-type': c.req.header('content-type') ?? '' },
+    }).formData()
   } catch {
     throw new HTTPException(400, { message: 'invalid multipart body' })
   }
