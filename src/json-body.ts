@@ -21,10 +21,11 @@ function tooLarge(): HTTPException {
 
 // Content-Length があれば読み取り前に弾き、無い/偽装されている場合も
 // ストリームの読み取り中に累積バイト数で打ち切る。
-export async function readJsonWithLimit(
+// multipart 経路 (#239) でも同じ上限付き読み取りを使うため export している。
+export async function readBodyWithLimit(
   req: Request,
   maxBytes: number,
-): Promise<unknown> {
+): Promise<Uint8Array> {
   const declared = Number(req.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > maxBytes) {
     await req.body?.cancel()
@@ -53,6 +54,14 @@ export async function readJsonWithLimit(
     merged.set(chunk, offset)
     offset += chunk.byteLength
   }
+  return merged
+}
+
+export async function readJsonWithLimit(
+  req: Request,
+  maxBytes: number,
+): Promise<unknown> {
+  const merged = await readBodyWithLimit(req, maxBytes)
   try {
     return JSON.parse(new TextDecoder().decode(merged))
   } catch {

@@ -3707,6 +3707,58 @@ describe('POST /clip - image clip', () => {
     }
   })
 
+  /// Content-Length が無い (チャンク転送) multipart でも、読み取り中の累積
+  /// バイト数で総本文サイズを制限すること。保存されない巨大な未使用フィールドを
+  /// 含めても 413 になる (#239)。
+  it('Content-Length が無い multipart でも総本文サイズ上限で 413 を返す', async () => {
+    const testEnv = env as typeof env & {
+      MAX_IMAGE_BYTES?: string
+      MAX_TEXT_CLIP_BYTES?: string
+    }
+    const originalImage = testEnv.MAX_IMAGE_BYTES
+    const originalText = testEnv.MAX_TEXT_CLIP_BYTES
+    testEnv.MAX_IMAGE_BYTES = '8'
+    testEnv.MAX_TEXT_CLIP_BYTES = '4'
+    try {
+      const form = new FormData()
+      form.set(
+        'image',
+        new File([pngBytes(1)], 'nolen.png', { type: 'image/png' }),
+      )
+      form.set('ignored', 'x'.repeat(20000))
+      const encoded = new Request('http://example.com/clip', {
+        method: 'POST',
+        body: form,
+      })
+      const contentType = encoded.headers.get('content-type') ?? ''
+      const raw = new Uint8Array(await encoded.arrayBuffer())
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let i = 0; i < raw.length; i += 1024) {
+            controller.enqueue(raw.slice(i, i + 1024))
+          }
+          controller.close()
+        },
+      })
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+          'Content-Type': contentType,
+        },
+        body: stream,
+        duplex: 'half',
+      } as RequestInit)
+
+      expect(res.status).toBe(413)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.error).toContain('request body too large')
+    } finally {
+      testEnv.MAX_IMAGE_BYTES = originalImage
+      testEnv.MAX_TEXT_CLIP_BYTES = originalText
+    }
+  })
+
   it('saves an image under Attachments/ without an embed note by default', async () => {
     const res = await postImage({}, 'unique-shot-1.png', pngBytes(10))
     expect(res.status).toBe(200)
