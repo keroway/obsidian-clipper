@@ -18,8 +18,10 @@ export async function readErrorSnippet(res: Response): Promise<string> {
     while (received < ERROR_DETAIL_MAX_BYTES) {
       const { done, value } = await reader.read()
       if (done) break
-      received += value.byteLength
-      text += decoder.decode(value, { stream: true })
+      // 単一の巨大チャンクを全量デコードしないよう、残り許容バイト数までに切る (#235)。
+      const chunk = value.subarray(0, ERROR_DETAIL_MAX_BYTES - received)
+      received += chunk.byteLength
+      text += decoder.decode(chunk, { stream: true })
     }
     text += decoder.decode()
   } catch {

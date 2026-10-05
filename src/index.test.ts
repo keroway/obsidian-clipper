@@ -1037,6 +1037,38 @@ describe('readErrorSnippet（#225）', () => {
     expect(pulled).toBeLessThan(10)
   })
 
+  it('単一の巨大チャンクでもデコード入力は 800 バイト以内 (#235)', async () => {
+    const decoded: number[] = []
+    const original = TextDecoder.prototype.decode
+    const spy = vi
+      .spyOn(TextDecoder.prototype, 'decode')
+      .mockImplementation(function (this: TextDecoder, input, options) {
+        if (input) decoded.push(input.byteLength)
+        return original.call(this, input, options)
+      })
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(1024 * 1024).fill(0x41))
+        },
+      })
+      const out = await readErrorSnippet(new Response(body))
+      expect(out).toBe('A'.repeat(200))
+      expect(decoded.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(800)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('マルチバイト文字の巨大チャンクも 200 文字で返す (#235)', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('あ'.repeat(10000)))
+      },
+    })
+    expect(await readErrorSnippet(new Response(body))).toBe('あ'.repeat(200))
+  })
+
   it('body が無い応答は空文字', async () => {
     expect(await readErrorSnippet(new Response(null))).toBe('')
   })
