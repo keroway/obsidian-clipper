@@ -10,6 +10,35 @@ import { hasValidTag, parseTagList } from './tags'
 
 const ANTHROPIC_DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
 const ANTHROPIC_TIMEOUT_MS = 30_000
+export const WORKERS_AI_TIMEOUT_MS = 30_000
+
+// Workers AI の ai.run は AbortSignal を受け取れないため、待機だけを打ち切る。
+// 期限超過は reject として呼び出し側の既存失敗処理 (空要約・空タグで保存継続) に渡す。
+// 処理自体はキャンセルされず、遅れて完了した結果は破棄される。
+async function withWorkersAiTimeout<T>(
+  work: Promise<T>,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `workers-ai ${label} timed out after ${WORKERS_AI_TIMEOUT_MS}ms`,
+          ),
+        ),
+      WORKERS_AI_TIMEOUT_MS,
+    )
+  })
+  // 期限後に work が reject しても unhandled rejection にしない。
+  work.catch(() => {})
+  try {
+    return await Promise.race([work, timeout])
+  } finally {
+    clearTimeout(timer ?? null)
+  }
+}
 
 export async function summarizeWithProvider(
   env: Bindings,
@@ -55,15 +84,18 @@ async function summarize(
   md: string,
   title: string | undefined,
 ): Promise<string> {
-  const r = (await ai.run(
-    model as Parameters<Ai['run']>[0],
-    {
-      messages: [
-        { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-        { role: 'user', content: buildSummaryUserPrompt(md, title) },
-      ],
-      max_tokens: SUMMARY_MAX_TOKENS,
-    } as never,
+  const r = (await withWorkersAiTimeout(
+    ai.run(
+      model as Parameters<Ai['run']>[0],
+      {
+        messages: [
+          { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
+          { role: 'user', content: buildSummaryUserPrompt(md, title) },
+        ],
+        max_tokens: SUMMARY_MAX_TOKENS,
+      } as never,
+    ),
+    'summarize',
   )) as { response?: unknown }
   const response = r?.response
   if (response === undefined || response === null) return ''
@@ -126,15 +158,18 @@ export async function generateTags(
     }
   }
   const model = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct'
-  const r = (await env.AI.run(
-    model as Parameters<Ai['run']>[0],
-    {
-      messages: [
-        { role: 'system', content: AUTO_TAG_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 60,
-    } as never,
+  const r = (await withWorkersAiTimeout(
+    env.AI.run(
+      model as Parameters<Ai['run']>[0],
+      {
+        messages: [
+          { role: 'system', content: AUTO_TAG_SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 60,
+      } as never,
+    ),
+    'auto-tag',
   )) as { response?: unknown }
   const response = r?.response
   if (

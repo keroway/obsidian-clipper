@@ -21,7 +21,11 @@ import { readErrorSnippet } from './error-body'
 import { fetchArticle } from './fetch-article'
 import app from './index'
 import { jsonBodyLimit, readJsonWithLimit } from './json-body'
-import { generateTags, summarizeWithProvider } from './llm'
+import {
+  generateTags,
+  summarizeWithProvider,
+  WORKERS_AI_TIMEOUT_MS,
+} from './llm'
 import { renderNote, sanitizeForFilename } from './note'
 import { notifyWebhook, WEBHOOK_TIMEOUT_MS } from './notify'
 import {
@@ -1938,6 +1942,84 @@ describe('generateTags', () => {
       )
     },
   )
+})
+
+// ─────────────────── Workers AI の待機期限（#249） ───────────────────
+
+describe('Workers AI の待機期限（#249）', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // 応答しない AI。期限が無いと await が永久に完了せず、本文保存へ進めない。
+  const hangingEnv = () => {
+    const run = vi.fn(() => new Promise<never>(() => {}))
+    return {
+      env: {
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        AI: { run },
+      } as unknown as Bindings,
+      run,
+    }
+  }
+
+  it('summarizeWithProvider は期限超過で reject する', async () => {
+    vi.useFakeTimers()
+    try {
+      const { env: testEnv } = hangingEnv()
+      const assertion = expect(
+        summarizeWithProvider(testEnv, 'body text', 'Title'),
+      ).rejects.toThrow(/timed out/)
+      await vi.advanceTimersByTimeAsync(WORKERS_AI_TIMEOUT_MS + 1)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('generateTags は期限超過で reject する', async () => {
+    vi.useFakeTimers()
+    try {
+      const { env: testEnv } = hangingEnv()
+      const assertion = expect(
+        generateTags(testEnv, 'body text', 'Title'),
+      ).rejects.toThrow(/timed out/)
+      await vi.advanceTimersByTimeAsync(WORKERS_AI_TIMEOUT_MS + 1)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Anthropic 失敗後のフォールバックでも Workers AI の待機が打ち切られる', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () => new Response('server error', { status: 500 }),
+      )
+      const { env: base } = hangingEnv()
+      const testEnv = {
+        ...base,
+        SUMMARY_PROVIDER: 'anthropic',
+        ANTHROPIC_API_KEY: 'sk-test',
+      } as Bindings
+      const assertion = expect(
+        summarizeWithProvider(testEnv, 'body text', 'Title'),
+      ).rejects.toThrow(/timed out/)
+      await vi.advanceTimersByTimeAsync(WORKERS_AI_TIMEOUT_MS + 1)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('期限内に応答すれば従来どおり結果を返す', async () => {
+    const run = vi.fn(async () => ({ response: 'ok summary' }))
+    const testEnv = { AI: { run } } as unknown as Bindings
+    expect(await summarizeWithProvider(testEnv, 'body text', 'Title')).toBe(
+      'ok summary',
+    )
+  })
 })
 
 // ─────────────────────────── notifyWebhook ───────────────────────────
