@@ -23,7 +23,7 @@ import app from './index'
 import { jsonBodyLimit, readJsonWithLimit } from './json-body'
 import { generateTags, summarizeWithProvider } from './llm'
 import { renderNote, sanitizeForFilename } from './note'
-import { notifyWebhook } from './notify'
+import { notifyWebhook, WEBHOOK_TIMEOUT_MS } from './notify'
 import {
   autoTagsEnabled,
   hostTagsFor,
@@ -2041,6 +2041,54 @@ describe('notifyWebhook', () => {
       text: 'hello world',
       content: 'hello world',
     })
+  })
+
+  // ─── 時間上限（#243）───
+
+  it('エラー本文が止まっても期限でステータスを警告し、完了する', async () => {
+    vi.useFakeTimers()
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const body = new ReadableStream<Uint8Array>({ pull() {} })
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () => new Response(body, { status: 500 }),
+      )
+
+      const done = notifyWebhook('https://webhook.test/x', 'msg')
+      await vi.advanceTimersByTimeAsync(WEBHOOK_TIMEOUT_MS + 1)
+      await done
+
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toContain('500')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ヘッダーが返らなくても期限で abort され、警告して完了する', async () => {
+    vi.useFakeTimers()
+    try {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      let signal: AbortSignal | undefined
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            signal = (init as RequestInit | undefined)?.signal ?? undefined
+            signal?.addEventListener('abort', () =>
+              reject(new Error('aborted')),
+            )
+          }),
+      )
+
+      const done = notifyWebhook('https://webhook.test/x', 'msg')
+      await vi.advanceTimersByTimeAsync(WEBHOOK_TIMEOUT_MS + 1)
+      await done
+
+      expect(signal?.aborted).toBe(true)
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('swallows fetch errors without rejecting the caller', async () => {
