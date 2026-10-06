@@ -2,9 +2,22 @@
 // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL 等の制御文字をファイル名から除去するために意図的に含める
 const INVALID_FILENAME_RE = /[\\/:*?"<>|[\]#^`\x00-\x1f\x7f]/g
 
+// コードポイント単位で切り詰める。UTF-16 単位の slice だと絵文字のサロゲートペアが
+// 分断され、不正な Unicode 文字列が R2 のキーに渡る (issue #251)。
+export function truncateByCodePoints(s: string, max: number): string {
+  if (s.length <= max) return s
+  let end = 0
+  let count = 0
+  for (const ch of s) {
+    if (count >= max) break
+    end += ch.length
+    count++
+  }
+  return s.slice(0, end)
+}
+
 export function sanitizeForFilename(name: string): string {
-  return name
-    .slice(0, 200)
+  return truncateByCodePoints(name, 200)
     .replace(INVALID_FILENAME_RE, ' ')
     .replace(/\s+/g, ' ')
     .trim()

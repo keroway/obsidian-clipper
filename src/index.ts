@@ -52,7 +52,7 @@ import {
   readJsonWithLimit,
 } from './json-body'
 import { generateTags, summarizeWithProvider } from './llm'
-import { renderNote, sanitizeForFilename } from './note'
+import { renderNote, sanitizeForFilename, truncateByCodePoints } from './note'
 import { notifyWebhook } from './notify'
 import { autoTagsEnabled, hostTagsFor, mergeTags } from './tags'
 import {
@@ -303,8 +303,10 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   const now = new Date()
   const stamp = jstStamp(now)
   const slug =
-    sanitizeForFilename(articleTitle || hostname(url) || 'clip').slice(0, 60) ||
-    'clip'
+    truncateByCodePoints(
+      sanitizeForFilename(articleTitle || hostname(url) || 'clip'),
+      60,
+    ) || 'clip'
   const uniq = crypto.randomUUID().slice(0, 8)
   const filename = `${stamp}_${slug}_${uniq}.md`
   const key = `${prefix}${folder}/${filename}`
