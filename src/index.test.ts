@@ -26,7 +26,7 @@ import {
   summarizeWithProvider,
   WORKERS_AI_TIMEOUT_MS,
 } from './llm'
-import { renderNote, sanitizeForFilename } from './note'
+import { renderNote, sanitizeForFilename, truncateByCodePoints } from './note'
 import { notifyWebhook, WEBHOOK_TIMEOUT_MS } from './notify'
 import {
   autoTagsEnabled,
@@ -230,6 +230,34 @@ describe('sanitizeForFilename', () => {
   it('removes NUL and other control characters', () => {
     expect(sanitizeForFilename('a\x00b')).toBe('a b')
     expect(sanitizeForFilename('a\x01\x1fb')).toBe('a b')
+  })
+
+  it('200 単位の境界で絵文字のサロゲートペアを分断しない（#251）', () => {
+    const out = sanitizeForFilename(`${'a'.repeat(200)}😀`)
+    expect(LONE_SURROGATE_RE.test(out)).toBe(false)
+    expect(out).toBe('a'.repeat(200))
+    expect(sanitizeForFilename(`${'a'.repeat(199)}😀😀`)).toBe(
+      `${'a'.repeat(199)}😀`,
+    )
+  })
+})
+
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+describe('truncateByCodePoints（#251）', () => {
+  it('60 単位の境界に絵文字があっても分断しない', () => {
+    const out = truncateByCodePoints(`${'a'.repeat(59)}😀😀`, 60)
+    expect(LONE_SURROGATE_RE.test(out)).toBe(false)
+    expect(out).toBe(`${'a'.repeat(59)}😀`)
+  })
+
+  it('コードポイント数で上限を適用する', () => {
+    expect(truncateByCodePoints('😀😀😀', 2)).toBe('😀😀')
+  })
+
+  it('上限以下はそのまま返す', () => {
+    expect(truncateByCodePoints('abc', 60)).toBe('abc')
   })
 })
 

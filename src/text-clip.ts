@@ -4,7 +4,7 @@
 import { HTTPException } from 'hono/http-exception'
 import type { Bindings } from './bindings'
 import { isNonEmptyString, type TextClipBody } from './clip-input'
-import { renderNote, sanitizeForFilename } from './note'
+import { renderNote, sanitizeForFilename, truncateByCodePoints } from './note'
 import { mergeTags } from './tags'
 import { jstIso, jstStamp } from './time'
 
@@ -98,9 +98,10 @@ export async function saveTextClip(
   const stamp = jstStamp(now)
   const firstLine = bodyText.split('\n').find((l) => l.trim().length > 0)
   const slug =
-    sanitizeForFilename(
-      payload.title || firstLine || payload.note || 'note',
-    ).slice(0, 60) || 'note'
+    truncateByCodePoints(
+      sanitizeForFilename(payload.title || firstLine || payload.note || 'note'),
+      60,
+    ) || 'note'
   const uniq = crypto.randomUUID().slice(0, 8)
   const filename = `${stamp}_${slug}_${uniq}.md`
   const key = `${prefix}${folder}/${filename}`
