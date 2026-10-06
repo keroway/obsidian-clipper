@@ -4036,6 +4036,43 @@ describe('POST /clip - image clip', () => {
     expect(json.tags).toBeUndefined()
   })
 
+  it('title/note/tags が File で送られたら警告してフィールド名だけ報告し、画像は保存する (#252)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const form = new FormData()
+    form.set(
+      'image',
+      new File([pngBytes(150)], 'file-fields-252.png', { type: 'image/png' }),
+    )
+    form.set('title', new File(['SECRET-TITLE'], 't.txt'))
+    form.set('note', new File(['SECRET-NOTE'], 'n.txt'))
+    form.set('tags', new File(['SECRET-TAG'], 'g.txt'))
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.SHARED_SECRET}` },
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { ok: boolean; embedded: boolean }
+    expect(json.ok).toBe(true)
+    expect(json.embedded).toBe(false)
+    const messages = warn.mock.calls.map((c) => String(c[0]))
+    expect(messages).toContain(
+      'clip: title, note, tags に不正な値が含まれていたため無視しました',
+    )
+    expect(messages.join('\n')).not.toContain('SECRET')
+  })
+
+  it('文字列の title/note/tags では警告しない (#252)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await postImage(
+      { title: 't', note: 'n', tags: 'a,b' },
+      'string-fields-252.png',
+      pngBytes(160),
+    )
+    expect(res.status).toBe(200)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('returns 415 for unsupported image types', async () => {
     const form = new FormData()
     form.set(

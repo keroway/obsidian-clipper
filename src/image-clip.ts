@@ -92,6 +92,31 @@ export async function saveImageClip(
     typeof note === 'string' ||
     typeof tagsField === 'string'
 
+  // File 等の非文字列で送られた任意フィールドは未指定扱いで捨てられる。JSON 経路
+  // (#209) と同じく、フィールド名だけを警告・通知する (値や File 内容は出さない) (#252)。
+  const droppedFields = (
+    [
+      ['embed', embedField],
+      ['title', title],
+      ['note', note],
+      ['tags', tagsField],
+    ] as const
+  )
+    .filter(([, v]) => v !== null && typeof v !== 'string')
+    .map(([name]) => name)
+  if (droppedFields.length > 0) {
+    const fields = droppedFields.join(', ')
+    console.warn(`clip: ${fields} に不正な値が含まれていたため無視しました`)
+    if (env.NOTIFY_WEBHOOK_URL) {
+      waitUntil(
+        notifyWebhook(
+          env.NOTIFY_WEBHOOK_URL,
+          `[obsidian-clipper] ${fields} に不正な値が含まれていたため無視しました: image clip`,
+        ),
+      )
+    }
+  }
+
   // title/note/tags は multipart 経由でも renderNote() にそのまま渡り R2 に
   // 書き込まれるため、text-clip / URL クリップと同じ上限を適用する (#180)。
   const maxFieldBytes = resolveMaxTextClipBytes(env.MAX_TEXT_CLIP_BYTES)
