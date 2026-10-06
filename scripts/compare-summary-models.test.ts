@@ -88,10 +88,20 @@ describe('buildReport', () => {
 
     expect(report).toContain('本文取得失敗: 0/5')
     expect(report).toContain('比較は不成立')
-    expect(report).not.toContain('✅ 日本語のみ')
+    expect(report).not.toContain('✅ 検査対象の文字混入なし')
     expect(report).toMatch(
       /\| `test-model` \| 5\/5 \| 0 \| 0 \| 5 \| 0 \| \d+ms \| N\/A・未評価 \|/,
     )
+  })
+
+  it('英語だけの要約を日本語のみと断定せず、検査範囲を明示する (#246)', async () => {
+    const report = await buildReport(['https://en.example'], ['model-a'], {
+      fetchMarkdown: async () => 'Title: English\n本文'.repeat(10),
+      runModel: async (model) => okResult(model, 'This is an English summary.'),
+    })
+
+    expect(report).not.toContain('日本語のみ')
+    expect(report).toContain('✅ 検査対象の文字混入なし')
   })
 
   it.each(['', '   \n  '])(
@@ -109,7 +119,7 @@ describe('buildReport', () => {
       expect(calls).toBe(0)
       expect(report).toContain('本文取得失敗: 1/1')
       expect(report).toContain('比較は不成立')
-      expect(report).not.toContain('✅ 日本語のみ')
+      expect(report).not.toContain('✅ 検査対象の文字混入なし')
     },
   )
 

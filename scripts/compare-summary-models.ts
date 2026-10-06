@@ -170,7 +170,7 @@ function deriveTitle(md: string): string | undefined {
 }
 
 // モデル1回分の実行結果を4分類のどれかに落とす。空/空白のみの要約は
-// 「日本語のみ」の成功扱いにせず失敗として扱う (#164)。
+// 「検査対象の文字混入なし」の成功扱いにせず失敗として扱う (#164)。
 type ResultKind = 'error' | 'empty' | 'foreign' | 'ok'
 
 function classifyResult(r: ModelResult): ResultKind {
@@ -298,7 +298,7 @@ async function buildReport(
             ? '❌ 空要約'
             : kind === 'foreign'
               ? `⚠ 他言語混入: ${r.foreign.join(', ')}`
-              : '✅ 日本語のみ'
+              : '✅ 検査対象の文字混入なし'
       out.push(`### \`${model}\` — ${r.latencyMs}ms — ${flag}`)
       out.push('')
       out.push(r.summary ? `> ${r.summary.replace(/\n/g, '\n> ')}` : '> (空)')
@@ -319,7 +319,7 @@ async function buildReport(
   }
   out.push('')
   out.push(
-    '| モデル | 実行 | 未実行 | 失敗 | 空要約 | 有効評価 | 平均レイテンシ(実行時) | 他言語混入(有効評価内) |',
+    '| モデル | 実行 | 未実行 | 失敗 | 空要約 | 有効評価 | 平均レイテンシ(実行時) | 検査対象の文字混入(有効評価内) |',
   )
   out.push('| --- | --- | --- | --- | --- | --- | --- | --- |')
   for (const m of models) {
