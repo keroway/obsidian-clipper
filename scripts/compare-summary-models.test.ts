@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildReport,
   classifyResult,
+  fetchMarkdown,
   type ModelResult,
 } from './compare-summary-models'
 
@@ -11,6 +12,21 @@ import {
 function okResult(model: string, summary: string): ModelResult {
   return { model, summary, latencyMs: 10, foreign: [] }
 }
+
+describe('fetchMarkdown', () => {
+  it('空白のみの 200 応答を取得失敗にする (#245)', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response('  \n ', { status: 200 })) as unknown as typeof fetch
+    try {
+      await expect(fetchMarkdown('https://example.invalid')).rejects.toThrow(
+        'jina empty body',
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
 
 describe('classifyResult', () => {
   it('空要約を成功 (日本語のみ) ではなく失敗として分類する', () => {
@@ -77,6 +93,25 @@ describe('buildReport', () => {
       /\| `test-model` \| 5\/5 \| 0 \| 0 \| 5 \| 0 \| \d+ms \| N\/A・未評価 \|/,
     )
   })
+
+  it.each(['', '   \n  '])(
+    '空本文 %j はモデルを呼ばず本文取得失敗として集計する (#245)',
+    async (body) => {
+      let calls = 0
+      const report = await buildReport(['https://empty.example'], ['model-a'], {
+        fetchMarkdown: async () => body,
+        runModel: async (model) => {
+          calls++
+          return okResult(model, '要約')
+        },
+      })
+
+      expect(calls).toBe(0)
+      expect(report).toContain('本文取得失敗: 1/1')
+      expect(report).toContain('比較は不成立')
+      expect(report).not.toContain('✅ 日本語のみ')
+    },
+  )
 
   it('本文取得成功・失敗が混在するとき、有効評価件数を正しい分母で集計する', async () => {
     const urls = [

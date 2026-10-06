@@ -104,7 +104,9 @@ async function fetchMarkdown(url: string, jinaKey?: string): Promise<string> {
   if (jinaKey) headers.Authorization = `Bearer ${jinaKey}`
   const res = await fetch(`https://r.jina.ai/${url}`, { headers })
   if (!res.ok) throw new Error(`jina ${res.status}`)
-  return (await res.text()).trim()
+  const body = (await res.text()).trim()
+  if (body.length === 0) throw new Error('jina empty body')
+  return body
 }
 
 async function runModel(
@@ -265,6 +267,8 @@ async function buildReport(
     let md = ''
     try {
       md = await deps.fetchMarkdown(url)
+      // deps が空本文を返しても、モデルを呼ばず取得失敗として扱う (#245)
+      if (md.trim().length === 0) throw new Error('empty body')
     } catch (e) {
       fetchFailures++
       out.push(`## ${url}`)
@@ -369,4 +373,4 @@ if (import.meta.main) {
   main()
 }
 
-export { buildReport, classifyResult, type ModelResult }
+export { buildReport, classifyResult, fetchMarkdown, type ModelResult }
