@@ -22,13 +22,20 @@ import {
 } from './url-index'
 
 export type ImageClipResult =
-  | { duplicate: true; path: string; embedded: boolean; notePath?: string }
+  | {
+      duplicate: true
+      path: string
+      embedded: boolean
+      notePath?: string
+      tags?: string[]
+    }
   | {
       duplicate: false
       path: string
       bytes: number
       embedded: boolean
       notePath?: string
+      tags?: string[]
     }
 
 // workers-types の FormData#get() は string | null 固定で File を表現できないため、
@@ -107,7 +114,7 @@ export async function saveImageClip(
   const buildEmbedNote = async (
     now: Date,
     embedTarget: string,
-  ): Promise<string> => {
+  ): Promise<{ notePath: string; tags: string[] }> => {
     const stamp = jstStamp(now)
     const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
     const slug = sanitizeForFilename(origName).slice(0, 60) || 'image'
@@ -134,7 +141,7 @@ export async function saveImageClip(
       httpMetadata: { contentType: 'text/markdown; charset=utf-8' },
       customMetadata: { source: 'obsidian-clipper', kind: 'image-note' },
     })
-    return notePath
+    return { notePath, tags }
   }
 
   // refresh=1 は重複判定そのものを無視する指定なので、判定用の読み取りも
@@ -151,8 +158,14 @@ export async function saveImageClip(
         const embedTarget = existingPath.startsWith(prefix)
           ? existingPath.slice(prefix.length)
           : existingPath
-        const notePath = await buildEmbedNote(new Date(), embedTarget)
-        return { duplicate: true, path: existingPath, embedded: true, notePath }
+        const { notePath, tags } = await buildEmbedNote(new Date(), embedTarget)
+        return {
+          duplicate: true,
+          path: existingPath,
+          embedded: true,
+          notePath,
+          tags,
+        }
       }
     }
   }
@@ -184,7 +197,7 @@ export async function saveImageClip(
     )
   }
 
-  const notePath = wantEmbed
+  const embedNote = wantEmbed
     ? await buildEmbedNote(now, `${attachmentsFolder}/${filename}`)
     : undefined
 
@@ -192,7 +205,9 @@ export async function saveImageClip(
     duplicate: false,
     path: key,
     bytes: buf.byteLength,
-    embedded: !!notePath,
-    ...(notePath ? { notePath } : {}),
+    embedded: !!embedNote,
+    ...(embedNote
+      ? { notePath: embedNote.notePath, tags: embedNote.tags }
+      : {}),
   }
 }

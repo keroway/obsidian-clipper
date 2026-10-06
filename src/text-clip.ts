@@ -11,6 +11,7 @@ import { jstIso, jstStamp } from './time'
 export type TextClipResult = {
   path: string
   bytes: number
+  tags: string[]
 }
 
 // 画像クリップの MAX_IMAGE_BYTES (src/attachment.ts) に相当するサイズ上限 (#176)。
@@ -118,5 +119,5 @@ export async function saveTextClip(
     customMetadata: { source: 'obsidian-clipper', kind: 'text' },
   })
 
-  return { path: key, bytes: new TextEncoder().encode(body).length }
+  return { path: key, bytes: new TextEncoder().encode(body).length, tags }
 }

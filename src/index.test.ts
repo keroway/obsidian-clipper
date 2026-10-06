@@ -3213,6 +3213,21 @@ describe('POST /clip - text/markdown clip', () => {
     expect(content).toContain('- "test"')
   })
 
+  it('応答の tags が保存ノートの tags と一致し、上限超過分は切り捨てられる (#240)', async () => {
+    const manual = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']
+    const res = await postJson({ text: 'offline', tags: manual })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { path: string; tags: string[] }
+    expect(json.tags).toEqual(['clipped', 'a', 'b', 'c', 'd', 'e', 'f', 'g'])
+
+    const stored = await env.VAULT.get(json.path)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    for (const tag of json.tags) expect(content).toContain(`- "${tag}"`)
+    expect(content).not.toContain('- "h"')
+    expect(content).not.toContain('- "i"')
+  })
+
   it('saves a plaintext body via the text field', async () => {
     const res = await postJson({ text: 'just a plain note', note: 'memo' })
     expect(res.status).toBe(200)
@@ -3835,6 +3850,32 @@ describe('POST /clip - image clip', () => {
     expect(content).toContain('source: image-clip')
     expect(content).toContain('![[Attachments/')
     expect(content).toContain('My Screenshot')
+  })
+
+  it('embed note を作る画像クリップは保存後の tags を応答に含める (#240)', async () => {
+    const res = await postImage(
+      { tags: 'a,b,c,d,e,f,g,h,i' },
+      'unique-shot-tags-240.png',
+      pngBytes(21),
+    )
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as {
+      notePath: string
+      tags: string[]
+    }
+    expect(json.tags).toEqual(['clipped', 'a', 'b', 'c', 'd', 'e', 'f', 'g'])
+
+    const stored = await env.VAULT.get(json.notePath)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    for (const tag of json.tags) expect(content).toContain(`- "${tag}"`)
+    expect(content).not.toContain('- "h"')
+  })
+
+  it('embed note を作らない画像クリップの応答には tags を含めない (#240)', async () => {
+    const res = await postImage({}, 'unique-shot-no-tags-240.png', pngBytes(22))
+    const json = (await res.json()) as { tags?: string[] }
+    expect(json.tags).toBeUndefined()
   })
 
   it('returns 415 for unsupported image types', async () => {
