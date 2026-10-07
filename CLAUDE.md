@@ -129,3 +129,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Codex 向けの横断運用ルールは `keroway/CLAUDE.md` ではなく
 [agent-assets `docs/codex-common-instructions.md`](https://github.com/keroway/agent-assets/blob/main/docs/codex-common-instructions.md)
 を正典とする（Codex は git ルートより上の AGENTS.md を読まないため）。
+
+## Multi-agent claim protocol (all agents, including cloud agents)
+
+Before working on any GitHub issue in this repository:
+
+1. Skip issues that have an assignee, or any of these labels:
+   `in-progress` / `needs-refinement` / `blocked` / `needs-human` /
+   `needs-triage` / `needs-info`, or an `agent:<other-agent>` label
+   (one not matching your own name). Do not comment on or relabel them.
+2. To claim an issue: assign yourself, add `in-progress` plus your
+   attribution label — `agent:claude`, `agent:codex`, `agent:pi`,
+   `agent:goose`, or `agent:dots` for OpenAI cloud agents — and leave a
+   comment with your branch name.
+3. On finish or abort: remove `in-progress` and your `agent:*` label.
+4. Re-check labels, assignee, and open PRs right before opening a PR;
+   if another agent claimed the issue meanwhile, withdraw your work.
+5. Never touch issues labeled `needs-human`. Never force-push.
+
+Canonical: agent-assets/docs/agents/claim-protocol.md
