@@ -409,12 +409,13 @@ async function handleImageClip(c: AppContext) {
       ...(result.tags ? { tags: result.tags } : {}),
     })
   }
-  const { path, bytes, embedded, notePath, tags } = result
+  const { path, bytes, embedded, noteFailed, notePath, tags } = result
   return c.json({
     ok: true,
     path,
     bytes,
     embedded,
+    ...(noteFailed ? { noteFailed: true } : {}),
     ...(notePath ? { notePath } : {}),
     ...(tags ? { tags } : {}),
   })

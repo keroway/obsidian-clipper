@@ -4010,6 +4010,46 @@ describe('POST /clip - image clip', () => {
     expect(content).toContain('My Screenshot')
   })
 
+  it('embed note の PUT だけ失敗しても保存済み画像の path を 200 で返す (#255)', async () => {
+    const originalPut = env.VAULT.put.bind(env.VAULT)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(env.VAULT, 'put').mockImplementation(((
+      key: string,
+      value: unknown,
+      options?: { customMetadata?: Record<string, string> },
+    ) => {
+      if (options?.customMetadata?.kind === 'image-note') {
+        throw new Error('simulated note PUT failure')
+      }
+      // biome-ignore lint/suspicious/noExplicitAny: forwarding to the real R2Bucket.put overload set
+      return (originalPut as any)(key, value, options)
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only put is exercised
+    }) as any)
+    try {
+      const res = await postImage(
+        { embed: '1' },
+        'note-put-fail-255.png',
+        pngBytes(55),
+      )
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as {
+        ok: boolean
+        path: string
+        embedded: boolean
+        noteFailed?: boolean
+        notePath?: string
+      }
+      expect(json.ok).toBe(true)
+      expect(json.embedded).toBe(false)
+      expect(json.noteFailed).toBe(true)
+      expect(json.notePath).toBeUndefined()
+      expect(await env.VAULT.head(json.path)).not.toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('embed note を作る画像クリップは保存後の tags を応答に含める (#240)', async () => {
     const res = await postImage(
       { tags: 'a,b,c,d,e,f,g,h,i' },

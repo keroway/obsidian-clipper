@@ -34,6 +34,7 @@ export type ImageClipResult =
       path: string
       bytes: number
       embedded: boolean
+      noteFailed?: boolean
       notePath?: string
       tags?: string[]
     }
@@ -224,15 +225,36 @@ export async function saveImageClip(
     )
   }
 
-  const embedNote = wantEmbed
-    ? await buildEmbedNote(now, `${attachmentsFolder}/${filename}`)
-    : undefined
+  // 画像と index は保存済みなので、ノート PUT の失敗は 500 にせず部分成功として
+  // 保存先 path 付きで返す (#255)。
+  let embedNote: { notePath: string; tags: string[] } | undefined
+  let noteFailed = false
+  if (wantEmbed) {
+    try {
+      embedNote = await buildEmbedNote(now, `${attachmentsFolder}/${filename}`)
+    } catch (e) {
+      noteFailed = true
+      console.warn(
+        `clip: 画像は保存済みだが埋め込みノートの保存に失敗しました: ${key}`,
+        e,
+      )
+      if (env.NOTIFY_WEBHOOK_URL) {
+        waitUntil(
+          notifyWebhook(
+            env.NOTIFY_WEBHOOK_URL,
+            `[obsidian-clipper] 画像は保存済みですが埋め込みノートの保存に失敗しました: ${key}`,
+          ),
+        )
+      }
+    }
+  }
 
   return {
     duplicate: false,
     path: key,
     bytes: buf.byteLength,
     embedded: !!embedNote,
+    ...(noteFailed ? { noteFailed: true } : {}),
     ...(embedNote
       ? { notePath: embedNote.notePath, tags: embedNote.tags }
       : {}),
