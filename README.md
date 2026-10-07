@@ -368,7 +368,7 @@ Saved with `source: text-clip` frontmatter (no `source_url`), under `INBOX_FOLDE
 
 When an embed note is created, the response also includes `tags` (the final list saved in the note, after the cap is applied). Text clips always return `tags` as well.
 
-If the image is saved but the embed note PUT fails, the response is a partial success rather than a 500: `{ ok: true, path, bytes, embedded: false, noteFailed: true }` (the saved image `path` is returned, `notePath` is absent, and a failure notification is sent to `NOTIFY_WEBHOOK_URL` if configured). Re-posting the same image with an embed intent creates the note via the duplicate path.
+If the image is saved but the embed note PUT fails, the response is a partial success rather than a 500: `{ ok: true, path, bytes, embedded: false, noteFailed: true }` (the saved image `path` is returned, `notePath` is absent, and a failure notification is sent to `NOTIFY_WEBHOOK_URL` if configured). Re-posting the same image with an embed intent creates the note via the duplicate path. If the note PUT fails again on that duplicate path, the response is likewise `{ ok: false, duplicate: true, path, embedded: false, noteFailed: true }` (no 500) with the same webhook notification.
 
 The image is saved as binary content under `ATTACHMENTS_FOLDER` (default `Attachments`). Duplicate detection is based on the SHA-1 hash of the image bytes, reusing the same index as URL clips; add `?refresh=1` to bypass it.
 

@@ -26,6 +26,7 @@ export type ImageClipResult =
       duplicate: true
       path: string
       embedded: boolean
+      noteFailed?: boolean
       notePath?: string
       tags?: string[]
     }
@@ -185,13 +186,39 @@ export async function saveImageClip(
         const embedTarget = existingPath.startsWith(prefix)
           ? existingPath.slice(prefix.length)
           : existingPath
-        const { notePath, tags } = await buildEmbedNote(new Date(), embedTarget)
-        return {
-          duplicate: true,
-          path: existingPath,
-          embedded: true,
-          notePath,
-          tags,
+        // 画像は保存済みなので、ノート PUT の失敗は 500 にせず部分成功として
+        // 既存画像の path 付きで返す (#257)。
+        try {
+          const { notePath, tags } = await buildEmbedNote(
+            new Date(),
+            embedTarget,
+          )
+          return {
+            duplicate: true,
+            path: existingPath,
+            embedded: true,
+            notePath,
+            tags,
+          }
+        } catch (e) {
+          console.warn(
+            `clip: 画像は保存済みだが埋め込みノートの保存に失敗しました: ${existingPath}`,
+            e,
+          )
+          if (env.NOTIFY_WEBHOOK_URL) {
+            waitUntil(
+              notifyWebhook(
+                env.NOTIFY_WEBHOOK_URL,
+                `[obsidian-clipper] 画像は保存済みですが埋め込みノートの保存に失敗しました: ${existingPath}`,
+              ),
+            )
+          }
+          return {
+            duplicate: true,
+            path: existingPath,
+            embedded: false,
+            noteFailed: true,
+          }
         }
       }
     }

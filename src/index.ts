@@ -405,6 +405,7 @@ async function handleImageClip(c: AppContext) {
       duplicate: true,
       path: result.path,
       embedded: result.embedded,
+      ...(result.noteFailed ? { noteFailed: true } : {}),
       ...(result.notePath ? { notePath: result.notePath } : {}),
       ...(result.tags ? { tags: result.tags } : {}),
     })
