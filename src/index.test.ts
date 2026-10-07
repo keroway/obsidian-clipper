@@ -4050,6 +4050,50 @@ describe('POST /clip - image clip', () => {
     }
   })
 
+  it('重複画像の再送で embed note の PUT が失敗しても既存画像の path を 200 で返す (#257)', async () => {
+    const bytes = pngBytes(57)
+    const first = await postImage({}, 'dup-note-put-fail-257.png', bytes)
+    const firstJson = (await first.json()) as { path: string }
+
+    const originalPut = env.VAULT.put.bind(env.VAULT)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(env.VAULT, 'put').mockImplementation(((
+      key: string,
+      value: unknown,
+      options?: { customMetadata?: Record<string, string> },
+    ) => {
+      if (options?.customMetadata?.kind === 'image-note') {
+        throw new Error('simulated note PUT failure')
+      }
+      // biome-ignore lint/suspicious/noExplicitAny: forwarding to the real R2Bucket.put overload set
+      return (originalPut as any)(key, value, options)
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only put is exercised
+    }) as any)
+    try {
+      const res = await postImage(
+        { embed: '1' },
+        'dup-note-put-fail-257.png',
+        bytes,
+      )
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as {
+        duplicate: boolean
+        path: string
+        embedded: boolean
+        noteFailed?: boolean
+        notePath?: string
+      }
+      expect(json.duplicate).toBe(true)
+      expect(json.path).toBe(firstJson.path)
+      expect(json.embedded).toBe(false)
+      expect(json.noteFailed).toBe(true)
+      expect(json.notePath).toBeUndefined()
+      expect(warnSpy).toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('embed note を作る画像クリップは保存後の tags を応答に含める (#240)', async () => {
     const res = await postImage(
       { tags: 'a,b,c,d,e,f,g,h,i' },
