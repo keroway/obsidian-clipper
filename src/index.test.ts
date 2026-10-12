@@ -26,7 +26,13 @@ import {
   summarizeWithProvider,
   WORKERS_AI_TIMEOUT_MS,
 } from './llm'
-import { renderNote, sanitizeForFilename, truncateByCodePoints } from './note'
+import {
+  makeSlug,
+  renderNote,
+  sanitizeForFilename,
+  truncateByCodePoints,
+  truncateByUtf8Bytes,
+} from './note'
 import { notifyWebhook, WEBHOOK_TIMEOUT_MS } from './notify'
 import {
   autoTagsEnabled,
@@ -258,6 +264,37 @@ describe('truncateByCodePoints（#251）', () => {
 
   it('上限以下はそのまま返す', () => {
     expect(truncateByCodePoints('abc', 60)).toBe('abc')
+  })
+})
+
+describe('truncateByUtf8Bytes / makeSlug（#264）', () => {
+  const byteLen = (s: string) => new TextEncoder().encode(s).length
+
+  it('バイト上限でコードポイントを分断せず切り詰める', () => {
+    expect(truncateByUtf8Bytes('😀😀😀', 8)).toBe('😀😀')
+    expect(truncateByUtf8Bytes('😀😀😀', 7)).toBe('😀')
+    expect(truncateByUtf8Bytes('あいう', 7)).toBe('あい')
+  })
+
+  it('上限以下はそのまま返す', () => {
+    expect(truncateByUtf8Bytes('abc', 10)).toBe('abc')
+  })
+
+  it('絵文字 60 個でも最終ファイル名が 255 バイト以内に収まる', () => {
+    const slug = makeSlug('😀'.repeat(60), 'clip')
+    expect(LONE_SURROGATE_RE.test(slug)).toBe(false)
+    const filename = `2026-10-13_120000_${slug}_12345678.jpeg`
+    expect(byteLen(filename)).toBeLessThanOrEqual(255)
+    expect(slug.length).toBeGreaterThan(0)
+  })
+
+  it('日本語 60 文字 (180 バイト) はそのまま、ASCII 60 文字もそのまま', () => {
+    expect(makeSlug('あ'.repeat(60), 'x')).toBe('あ'.repeat(60))
+    expect(makeSlug('a'.repeat(100), 'x')).toBe('a'.repeat(60))
+  })
+
+  it('空になる入力はフォールバックを返す', () => {
+    expect(makeSlug('???', 'clip')).toBe('clip')
   })
 })
 
