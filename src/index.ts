@@ -136,8 +136,7 @@ app.post('/clip', async (c) => {
     // エラーも警告も出なかった。他の失敗系 (本文取得/要約/タグ生成/インデックス破損)
     // はすべて webhook 通知まで行っており、ここだけ console.warn 止まりだと
     // 扱いが不揃いだった (#133)。
-    const target =
-      classified.kind === 'url' ? classified.body.url : 'text/markdown clip'
+    const target = warningTarget(classified)
     console.warn('clip: tags に不正な値が含まれていたため無視しました')
     if (c.env.NOTIFY_WEBHOOK_URL) {
       c.executionCtx.waitUntil(
@@ -151,8 +150,7 @@ app.post('/clip', async (c) => {
   if (classified.droppedFields.length > 0) {
     // tags (#75/#133) と同じく、title/note/selection/markdown/text に非文字列値が
     // 来ても以前は silent に undefined へ落とすだけで、警告・通知が無かった (#209)。
-    const target =
-      classified.kind === 'url' ? classified.body.url : 'text/markdown clip'
+    const target = warningTarget(classified)
     const fields = classified.droppedFields.join(', ')
     console.warn(`clip: ${fields} に不正な値が含まれていたため無視しました`)
     if (c.env.NOTIFY_WEBHOOK_URL) {
@@ -185,6 +183,15 @@ app.onError((err, c) => {
 })
 
 export default app
+
+// 入力警告通知の対象表示。URL 検証・正規化前の生入力なので、パス・クエリ・
+// フラグメント・ユーザー情報を Webhook へ複製しないようホスト名だけにする (#262)。
+function warningTarget(
+  classified: NonNullable<ReturnType<typeof classifyJsonBody>>,
+) {
+  if (classified.kind !== 'url') return 'text/markdown clip'
+  return hostname(classified.body.url) || 'url clip'
+}
 
 // ---- URL クリップ (既存フロー、挙動不変) ----
 async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
