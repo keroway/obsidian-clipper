@@ -16,12 +16,43 @@ export function truncateByCodePoints(s: string, max: number): string {
   return s.slice(0, end)
 }
 
+// UTF-8 バイト数で切り詰める。コードポイントは分断しない (issue #264)。
+export function truncateByUtf8Bytes(s: string, maxBytes: number): string {
+  const encoder = new TextEncoder()
+  let end = 0
+  let bytes = 0
+  for (const ch of s) {
+    const size = encoder.encode(ch).length
+    if (bytes + size > maxBytes) break
+    bytes += size
+    end += ch.length
+  }
+  return s.slice(0, end)
+}
+
 export function sanitizeForFilename(name: string): string {
   return truncateByCodePoints(name, 200)
     .replace(INVALID_FILENAME_RE, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^[. ]+|[. ]+$/g, '')
+}
+
+// ファイル名スラグの上限。コードポイント数 60 に加え、ファイルシステムの NAME_MAX (255 バイト)
+// を超えないよう UTF-8 バイトでも制限する (issue #264)。ファイル名の他の部分は
+// `YYYY-MM-DD_HHMMSS_` (18) + `_` + 8 文字の接尾辞 + 拡張子 (最大 5) で 32 バイト前後。
+// 絵文字 (4 バイト) 60 個 = 240 バイトでも収まるよう、余裕を持って 200 バイトに抑える。
+const SLUG_MAX_CODE_POINTS = 60
+const SLUG_MAX_BYTES = 200
+
+export function makeSlug(raw: string, fallback: string): string {
+  const slug = truncateByUtf8Bytes(
+    truncateByCodePoints(sanitizeForFilename(raw), SLUG_MAX_CODE_POINTS),
+    SLUG_MAX_BYTES,
+  )
+    .trim()
+    .replace(/[. ]+$/g, '')
+  return slug || fallback
 }
 
 // YAML 二重引用符スカラー内で安全な制御文字エスケープ (\n \r \t は専用エスケープ、

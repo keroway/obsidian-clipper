@@ -9,7 +9,7 @@ import {
   resolveMaxImageBytes,
 } from './attachment'
 import type { Bindings } from './bindings'
-import { renderNote, sanitizeForFilename, truncateByCodePoints } from './note'
+import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
 import { mergeTags } from './tags'
 import { assertFieldWithinLimit, resolveMaxTextClipBytes } from './text-clip'
@@ -144,8 +144,7 @@ export async function saveImageClip(
   ): Promise<{ notePath: string; tags: string[] }> => {
     const stamp = jstStamp(now)
     const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
-    const slug =
-      truncateByCodePoints(sanitizeForFilename(origName), 60) || 'image'
+    const slug = makeSlug(origName, 'image')
     const uniq = crypto.randomUUID().slice(0, 8)
     const manualTags =
       typeof tagsField === 'string'
@@ -227,8 +226,7 @@ export async function saveImageClip(
   const now = new Date()
   const stamp = jstStamp(now)
   const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
-  const slug =
-    truncateByCodePoints(sanitizeForFilename(origName), 60) || 'image'
+  const slug = makeSlug(origName, 'image')
   const uniq = crypto.randomUUID().slice(0, 8)
   const filename = `${stamp}_${slug}_${uniq}.${ext}`
   const key = `${prefix}${attachmentsFolder}/${filename}`
