@@ -338,7 +338,9 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 | `title` | `string` | いいえ | 明示的なタイトル。未指定時は抽出されたタイトルを使います (`MAX_TEXT_CLIP_BYTES`、既定 1 MiB まで; #178)。 |
 | `selection` | `string` | いいえ | ページ上で選択していたテキスト。引用ブロックとして保存されます (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
 | `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
-| `tags` | `string[]` | いいえ | 追加タグ。`clipped`、allowlist タグ、任意の LLM タグと統合されます。 |
+| `tags` | `string[]` | いいえ | 追加タグ。`clipped`、allowlist タグ、任意の LLM タグと統合されます (100 件まで; #237)。 |
+
+JSON リクエストボディ全体の上限は `6 × MAX_TEXT_CLIP_BYTES + 64 KiB` で、`Content-Length` が無くても読み取り中に `413` で拒否されます (#237)。
 
 `source: web-clip` frontmatter で `INBOX_FOLDER` 配下に保存されます。
 
@@ -365,9 +367,15 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 | `tags` | テキストフィールド | いいえ | 埋め込みノート (任意) 用のカンマ区切りタグ。 |
 | `embed` | テキストフィールド | いいえ | `1` を指定 (または `title`/`note`/`tags` のいずれかを指定) すると、画像を `![[...]]` で埋め込んだノートも `INBOX_FOLDER` に生成します。既定では省略され、画像のみ保存されます。 |
 
+埋め込みノートを生成した場合、レスポンスには `tags` (上限適用後にノートへ保存した最終リスト) も含まれます。テキストクリップのレスポンスにも常に `tags` が含まれます。
+
+画像は保存できたが埋め込みノートの PUT に失敗した場合、500 ではなく部分成功として `{ ok: true, path, bytes, embedded: false, noteFailed: true }` を返します (保存済み画像の `path` は返り、`notePath` は含まれず、`NOTIFY_WEBHOOK_URL` が設定されていれば失敗通知を送ります)。同じ画像を埋め込み指定付きで再送すると、重複経路でノートが作成されます。その重複経路でもノートの PUT が失敗した場合は、同様に 500 ではなく `{ ok: false, duplicate: true, path, embedded: false, noteFailed: true }` を返し、同じ Webhook 通知を送ります。
+
 画像はバイナリのまま `ATTACHMENTS_FOLDER` (既定 `Attachments`) 配下に保存されます。
 重複検知は画像バイト列の SHA-1 ハッシュに基づき、URL クリップと同じインデックスを
 使い回します。`?refresh=1` を付けると無視できます。
+
+同じ画像バイト列が再送され、`embed`/`title`/`note`/`tags` のいずれかが指定された場合、画像自体は再アップロードされませんが、既存画像を参照する新しい埋め込みノートが作成されます (`{ ok: false, duplicate: true, path, embedded: true, notePath, tags }`)。埋め込み指定が無い場合の重複は `{ ok: false, duplicate: true, path, embedded: false }` のみを返します。
 
 #### レスポンス
 
@@ -376,7 +384,7 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 | `200` | 成功 JSON または重複 JSON |
 | `400` | `{ ok: false, error: 'invalid JSON body' \| 'url, or markdown/text is required' \| 'invalid url' \| 'invalid multipart body' \| 'image file is required' }` |
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
-| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' }` |
+| `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' \| 'too many tags' \| 'request body too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
 | `500` | `{ ok: false, error: <unhandled error message> }` |
 
