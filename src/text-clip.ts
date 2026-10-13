@@ -96,18 +96,22 @@ export async function saveTextClip(
 
   const now = new Date()
   const stamp = jstStamp(now)
-  const firstLine = bodyText.split('\n').find((l) => l.trim().length > 0)
-  const slug = makeSlug(
-    payload.title || firstLine || payload.note || 'note',
-    'note',
-  )
+  // 明示 title → 本文の最初の非空行 (見出し記号は除去) → note の順で有効タイトルを決め、
+  // ファイル名 (slug) と保存ノートの source_title / 見出しの両方に同じ値を使う (#268)。
+  const firstLine = bodyText
+    .split('\n')
+    .find((l) => l.trim().length > 0)
+    ?.trim()
+    .replace(/^#{1,6}\s+/, '')
+  const title = payload.title || firstLine || payload.note || undefined
+  const slug = makeSlug(title ?? 'note', 'note')
   const uniq = crypto.randomUUID().slice(0, 8)
   const filename = `${stamp}_${slug}_${uniq}.md`
   const key = `${prefix}${folder}/${filename}`
 
   const body = renderNote({
     source: 'text-clip',
-    title: payload.title,
+    title,
     note: payload.note,
     tags,
     body: bodyText,
