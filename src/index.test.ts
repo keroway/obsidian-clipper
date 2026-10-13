@@ -23,6 +23,7 @@ import app from './index'
 import { jsonBodyLimit, readJsonWithLimit } from './json-body'
 import {
   generateTags,
+  SUMMARY_MAX_CHARS,
   summarizeWithProvider,
   WORKERS_AI_TIMEOUT_MS,
 } from './llm'
@@ -1850,6 +1851,93 @@ describe('summarizeWithProvider', () => {
     await expect(
       summarizeWithProvider(testEnv, 'body text', 'Title'),
     ).rejects.toThrow(/empty summary/)
+  })
+
+  // #270: 成功応答でもサイズ上限を設け、超過は anthropic 失敗として workers-ai へ
+  // フォールバックする。ストリームは上限超過時点で cancel される。
+  it('falls back to workers-ai when the anthropic success response exceeds the size limit (no content-length)', async () => {
+    const cancel = vi.fn()
+    const chunk = new TextEncoder().encode('x'.repeat(40 * 1024))
+    let sent = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent >= 8) {
+            controller.close()
+            return
+          }
+          sent++
+          controller.enqueue(chunk)
+        },
+        cancel,
+      })
+      return new Response(body, { status: 200 })
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('fallback summary')
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(cancel).toHaveBeenCalled()
+    expect(sent).toBeLessThan(8)
+  })
+
+  it('falls back to workers-ai without reading the body when anthropic content-length exceeds the limit', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response('{}', {
+        status: 200,
+        headers: { 'content-length': String(10 * 1024 * 1024) },
+      })
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('fallback summary')
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to workers-ai when the anthropic summary exceeds SUMMARY_MAX_CHARS', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'x'.repeat(SUMMARY_MAX_CHARS + 1) }],
+        }),
+        { status: 200 },
+      )
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('fallback summary')
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws when the workers-ai summary exceeds SUMMARY_MAX_CHARS', async () => {
+    const { env: testEnv } = workersAiEnv('x'.repeat(SUMMARY_MAX_CHARS + 1))
+    await expect(
+      summarizeWithProvider(testEnv, 'body text', 'Title'),
+    ).rejects.toThrow(/summary too long/)
   })
 })
 
