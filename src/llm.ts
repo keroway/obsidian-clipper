@@ -1,4 +1,5 @@
 import type { Bindings } from './bindings'
+import { readTextWithLimit } from './bounded-body'
 import { readErrorSnippet } from './error-body'
 import {
   AUTO_TAG_SYSTEM_PROMPT,
@@ -11,6 +12,20 @@ import { hasValidTag, parseTagList } from './tags'
 const ANTHROPIC_DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
 const ANTHROPIC_TIMEOUT_MS = 30_000
 export const WORKERS_AI_TIMEOUT_MS = 30_000
+
+// 成功応答・生成要約のサイズ上限 (#270)。要約は max_tokens=300 で数百〜千数百文字に
+// 収まるため、上限は異常応答 (巨大ノート生成) だけを弾く余裕を持たせた値にする。
+// 超過は throw し、要約は既存のフォールバック/要約失敗通知 (本文保存は継続) に接続する。
+const ANTHROPIC_RESPONSE_MAX_BYTES = 64 * 1024
+export const SUMMARY_MAX_CHARS = 4000
+
+function assertSummaryLength(provider: string, text: string): void {
+  if (text.length > SUMMARY_MAX_CHARS) {
+    throw new Error(
+      `${provider} summary too long (${text.length} > ${SUMMARY_MAX_CHARS} chars)`,
+    )
+  }
+}
 
 // Workers AI の ai.run は AbortSignal を受け取れないため、待機だけを打ち切る。
 // 期限超過は reject として呼び出し側の既存失敗処理 (空要約・空タグで保存継続) に渡す。
@@ -61,6 +76,7 @@ export async function summarizeWithProvider(
         title,
       )
       if (!text) throw new Error('anthropic returned empty summary')
+      assertSummaryLength('anthropic', text)
       return text
     } catch (e) {
       // Anthropic 失敗時は 1 回だけ workers-ai にフォールバック (ループは作らない)
@@ -70,11 +86,13 @@ export async function summarizeWithProvider(
       )
       const fallback = await summarize(env.AI, workersAiModel, md, title)
       if (!fallback) throw new Error('workers-ai returned empty summary')
+      assertSummaryLength('workers-ai', fallback)
       return fallback
     }
   }
   const result = await summarize(env.AI, workersAiModel, md, title)
   if (!result) throw new Error('workers-ai returned empty summary')
+  assertSummaryLength('workers-ai', result)
   return result
 }
 
@@ -217,7 +235,13 @@ async function anthropicComplete(
       const text = await readErrorSnippet(res)
       throw new Error(`anthropic ${res.status}${text ? `: ${text}` : ''}`)
     }
-    const data = (await res.json()) as {
+    const raw = await readTextWithLimit(res, ANTHROPIC_RESPONSE_MAX_BYTES)
+    if (raw === null) {
+      throw new Error(
+        `anthropic response too large (> ${ANTHROPIC_RESPONSE_MAX_BYTES} bytes)`,
+      )
+    }
+    const data = JSON.parse(raw) as {
       content?: Array<{ type: string; text?: string }>
     }
     const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
