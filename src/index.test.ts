@@ -3455,6 +3455,31 @@ describe('POST /clip - text/markdown clip', () => {
     expect(content).toContain('memo')
   })
 
+  it('title 省略時は本文の最初の非空行を source_title と見出しにも使う (#268)', async () => {
+    const res = await postJson({ text: '\nFirst line\nBody' })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { path: string }
+    expect(json.path).toContain('First line')
+
+    const stored = await env.VAULT.get(json.path)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    expect(content).toContain('source_title: ')
+    expect(content).toContain('First line')
+    expect(content).toMatch(/^# First line$/m)
+  })
+
+  it('title も本文も無い場合は note を source_title にフォールバックする (#268)', async () => {
+    const res = await postJson({ text: '   ', note: 'memo only' })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { path: string }
+
+    const stored = await env.VAULT.get(json.path)
+    // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+    const content = await stored!.text()
+    expect(content).toMatch(/^# memo only$/m)
+  })
+
   it('returns 400 when neither url nor markdown/text is present', async () => {
     const res = await postJson({ title: 'nothing useful' })
     expect(res.status).toBe(400)
