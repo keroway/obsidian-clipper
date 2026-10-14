@@ -12,7 +12,11 @@ import type { Bindings } from './bindings'
 import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
 import { mergeTags } from './tags'
-import { assertFieldWithinLimit, resolveMaxTextClipBytes } from './text-clip'
+import {
+  assertFieldWithinLimit,
+  MAX_TAGS_COUNT,
+  resolveMaxTextClipBytes,
+} from './text-clip'
 import { jstIso, jstStamp } from './time'
 import {
   indexSkipMessage,
@@ -137,6 +141,16 @@ export async function saveImageClip(
     maxFieldBytes,
     'tags',
   )
+  // カンマ区切りの要素数にも JSON 経路と同じ上限を適用する (#274)。split の limit で
+  // 全件展開を避け、空要素も数える (JSON 経路の空文字列要素と同じ扱い)。
+  const rawTags =
+    typeof tagsField === 'string'
+      ? tagsField.split(',', MAX_TAGS_COUNT + 1)
+      : []
+  if (rawTags.length > MAX_TAGS_COUNT) {
+    throw new HTTPException(413, { message: 'too many tags' })
+  }
+  const manualTags = rawTags.map((t) => t.trim()).filter(Boolean)
 
   const buildEmbedNote = async (
     now: Date,
@@ -146,13 +160,6 @@ export async function saveImageClip(
     const origName = file.name?.replace(/\.[a-zA-Z0-9]+$/, '') ?? ''
     const slug = makeSlug(origName, 'image')
     const uniq = crypto.randomUUID().slice(0, 8)
-    const manualTags =
-      typeof tagsField === 'string'
-        ? tagsField
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : []
     const tags = mergeTags(['clipped', ...manualTags])
     const noteBody = renderNote({
       source: 'image-clip',

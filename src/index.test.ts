@@ -4178,6 +4178,45 @@ describe('POST /clip - image clip', () => {
     expect(content).toContain('My Screenshot')
   })
 
+  it('tags の要素数が上限を超える multipart は画像 PUT 前に 413 を返す (#274)', async () => {
+    const putSpy = vi.spyOn(env.VAULT, 'put')
+    const tooMany = Array.from(
+      { length: MAX_TAGS_COUNT + 1 },
+      (_, i) => `tag${i}`,
+    ).join(',')
+    const res = await postImage(
+      { tags: tooMany },
+      'tags-too-many-274.png',
+      pngBytes(61),
+    )
+    expect(res.status).toBe(413)
+    const json = (await res.json()) as { error: string }
+    expect(json.error).toContain('too many tags')
+    expect(putSpy).not.toHaveBeenCalled()
+
+    const commas = `${'a,'.repeat(50000)}a`
+    const res2 = await postImage(
+      { tags: commas },
+      'tags-many-commas-274.png',
+      pngBytes(62),
+    )
+    expect(res2.status).toBe(413)
+    putSpy.mockRestore()
+  })
+
+  it('tags の要素数が上限ちょうどの multipart は保存できる (#274)', async () => {
+    const atLimit = Array.from(
+      { length: MAX_TAGS_COUNT },
+      (_, i) => `tag${i}`,
+    ).join(',')
+    const res = await postImage(
+      { tags: atLimit },
+      'tags-at-limit-274.png',
+      pngBytes(63),
+    )
+    expect(res.status).toBe(200)
+  })
+
   it('embed note の PUT だけ失敗しても保存済み画像の path を 200 で返す (#255)', async () => {
     const originalPut = env.VAULT.put.bind(env.VAULT)
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
