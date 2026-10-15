@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildReport,
   classifyResult,
   fetchMarkdown,
   type ModelResult,
+  runModel,
 } from './compare-summary-models'
 
 // #164: 本文取得失敗・空要約がエラー0件として集計される不具合の回帰テスト。
@@ -25,6 +26,57 @@ describe('fetchMarkdown', () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+})
+
+describe('runModel', () => {
+  // #282: ヘッダー受信 (t=10) 後に本文読み取りが遅れる (t=110) 応答を再現する。
+  async function latencyFor(res: {
+    ok: boolean
+    status: number
+    body: unknown
+  }): Promise<number> {
+    let now = 0
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => {
+      now = 10
+      return {
+        ok: res.ok,
+        status: res.status,
+        json: async () => {
+          now = 110
+          return res.body
+        },
+      }
+    }) as unknown as typeof fetch
+    try {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+      return r.latencyMs
+    } finally {
+      globalThis.fetch = original
+      spy.mockRestore()
+    }
+  }
+
+  it('成功時のレイテンシに本文読み取り時間を含める', async () => {
+    expect(
+      await latencyFor({
+        ok: true,
+        status: 200,
+        body: { success: true, result: { response: 'ok' } },
+      }),
+    ).toBe(110)
+  })
+
+  it('API エラー時のレイテンシにも本文読み取り時間を含める', async () => {
+    expect(
+      await latencyFor({
+        ok: false,
+        status: 500,
+        body: { success: false, errors: [{ message: 'boom' }] },
+      }),
+    ).toBe(110)
   })
 })
 
