@@ -18,8 +18,9 @@ const JINA_MAX_RETRIES = 2
 const JINA_RETRY_STATUS = new Set([429, 503])
 
 function extractJinaTitle(md: string): string | undefined {
-  const m = md.match(/^Title:\s*(.+)$/m)
-  return m ? m[1].trim() : undefined
+  // 空白は水平空白に限る。\s だと空の Title 行から次行まで取り込んでしまう (#280)
+  const m = md.match(/^Title:[ \t]*([^\r\n]*)$/m)
+  return m?.[1].trim() || undefined
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

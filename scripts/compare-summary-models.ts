@@ -164,8 +164,9 @@ async function runModel(
 
 function deriveTitle(md: string): string | undefined {
   // Jina 出力は先頭付近に "Title: ..." を含むことが多い。無ければ最初の見出し。
-  const titleLine = md.match(/^Title:\s*(.+)$/m)?.[1]
-  if (titleLine) return titleLine.trim()
+  // 空白は水平空白に限る (空の Title 行が次行を取り込まないように, #280)
+  const titleLine = md.match(/^Title:[ \t]*([^\r\n]*)$/m)?.[1]?.trim()
+  if (titleLine) return titleLine
   return md.match(/^#\s+(.+)$/m)?.[1]?.trim()
 }
 

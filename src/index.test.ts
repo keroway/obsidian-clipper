@@ -2655,6 +2655,49 @@ describe('POST /clip integration', () => {
     expect(content2).toContain('collision-article-two')
   })
 
+  it.each([
+    [
+      'LF',
+      'Title:\nURL Source: https://example.com/article\n\nMarkdown Content:\nBody',
+    ],
+    [
+      'CRLF',
+      'Title:\r\nURL Source: https://example.com/article\r\n\r\nMarkdown Content:\r\nBody',
+    ],
+    [
+      'whitespace only',
+      'Title:  \t\nURL Source: https://example.com/article\n\nMarkdown Content:\nBody',
+    ],
+  ])(
+    'does not take the next line as the title when the Title line is empty (%s, #280)',
+    async (_label, jinaBody) => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async (input: RequestInfo | URL) => {
+          if (input.toString().startsWith('https://r.jina.ai/')) {
+            return new Response(jinaBody, { status: 200 })
+          }
+          return new Response('Not Found', { status: 404 })
+        },
+      )
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({ url: 'https://example.com/empty-title-280' }),
+      })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as { ok: boolean; path: string }
+      const stored = await env.VAULT.get(json.path)
+      expect(stored).not.toBeNull()
+      // biome-ignore lint/style/noNonNullAssertion: expect() assertion above guarantees non-null
+      const content = await stored!.text()
+      expect(content).not.toContain('source_title: "URL Source')
+      expect(content).not.toContain('# URL Source')
+    },
+  )
+
   it('returns bytes as actual UTF-8 byte length (not UTF-16 code unit count)', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(
       async (input: RequestInfo | URL) => {
