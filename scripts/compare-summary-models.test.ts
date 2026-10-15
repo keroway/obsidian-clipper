@@ -78,6 +78,41 @@ describe('runModel', () => {
       }),
     ).toBe(110)
   })
+
+  it.each([{ unexpected: 'payload' }, 42, true, ['a']])(
+    '非文字列の response %j を要約として受理せずエラーにする (#285)',
+    async (response) => {
+      const original = globalThis.fetch
+      globalThis.fetch = (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, result: { response } }),
+      })) as unknown as typeof fetch
+      try {
+        const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+        expect(r.error).toContain('non-string response')
+        expect(classifyResult(r)).toBe('error')
+      } finally {
+        globalThis.fetch = original
+      }
+    },
+  )
+
+  it('response 欠落は空要約のまま扱う (#285)', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, result: {} }),
+    })) as unknown as typeof fetch
+    try {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+      expect(r.error).toBeUndefined()
+      expect(classifyResult(r)).toBe('empty')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
 })
 
 describe('classifyResult', () => {
