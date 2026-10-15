@@ -9,3 +9,7 @@ max_issues_per_cycle: 1
 # true + 呼び出し側が `/issue-sprint merge` を明示した場合のみ、
 # CI green・レビュー解決・branch protection を満たした上でsquash mergeを許可する。
 allow_merge: true
+
+# Codex による非対話 issue 実装を許可しない。ローカル clone に .wrangler/ 等の資格情報が
+# 置かれうるため(agent-assets#371)。資格情報を Codex 用 checkout から分離できたら true にする。
+allow_codex_implementation: false
