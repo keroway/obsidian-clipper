@@ -137,7 +137,7 @@ async function runModel(
     )
     const data = (await res.json()) as {
       success?: boolean
-      result?: { response?: string }
+      result?: { response?: unknown }
       errors?: Array<{ message?: string }>
     }
     // 本文の読み取り・解析完了までを計測区間とし、成功/APIエラー/例外で揃える (#282)
@@ -147,7 +147,22 @@ async function runModel(
         data.errors?.map((e) => e.message).join('; ') || `http ${res.status}`
       return { model, summary: '', latencyMs, foreign: [], error: msg }
     }
-    const summary = (data.result?.response ?? '').toString().trim()
+    // 本番 (src/llm.ts) と同じく、非文字列の response は要約として受理しない (#285)
+    const response = data.result?.response
+    if (
+      response !== undefined &&
+      response !== null &&
+      typeof response !== 'string'
+    ) {
+      return {
+        model,
+        summary: '',
+        latencyMs,
+        foreign: [],
+        error: `non-string response: ${typeof response}`,
+      }
+    }
+    const summary = (response ?? '').trim()
     const foreign = FOREIGN_SCRIPTS.filter((s) => s.re.test(summary)).map(
       (s) => s.name,
     )
