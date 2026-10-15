@@ -135,12 +135,13 @@ async function runModel(
         }),
       },
     )
-    const latencyMs = Date.now() - started
     const data = (await res.json()) as {
       success?: boolean
       result?: { response?: string }
       errors?: Array<{ message?: string }>
     }
+    // 本文の読み取り・解析完了までを計測区間とし、成功/APIエラー/例外で揃える (#282)
+    const latencyMs = Date.now() - started
     if (!res.ok || !data.success) {
       const msg =
         data.errors?.map((e) => e.message).join('; ') || `http ${res.status}`
@@ -374,4 +375,10 @@ if (import.meta.main) {
   main()
 }
 
-export { buildReport, classifyResult, fetchMarkdown, type ModelResult }
+export {
+  buildReport,
+  classifyResult,
+  fetchMarkdown,
+  type ModelResult,
+  runModel,
+}
