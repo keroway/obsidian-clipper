@@ -29,6 +29,94 @@ describe('fetchMarkdown', () => {
   })
 })
 
+// #287: signal が abort されたら reject する、永久に完了しない待機を作る。
+function hang(signal: AbortSignal | null | undefined): Promise<never> {
+  return new Promise((_, reject) => {
+    signal?.addEventListener('abort', () =>
+      reject(new DOMException('aborted', 'AbortError')),
+    )
+  })
+}
+
+describe('通信タイムアウト (#287)', () => {
+  it('fetchMarkdown: ヘッダー待機が期限を超えたら取得失敗にする', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+      hang(init?.signal)) as unknown as typeof fetch
+    try {
+      await expect(
+        fetchMarkdown('https://example.invalid', undefined, 20),
+      ).rejects.toThrow('jina timeout after 20ms')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('fetchMarkdown: 本文読み取りが期限を超えたら取得失敗にする', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => hang(init?.signal),
+      })) as unknown as typeof fetch
+    try {
+      await expect(
+        fetchMarkdown('https://example.invalid', undefined, 20),
+      ).rejects.toThrow('jina timeout after 20ms')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('runModel: ヘッダー待機が期限を超えたら error 結果を返す', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+      hang(init?.signal)) as unknown as typeof fetch
+    try {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined, 20)
+      expect(r.error).toBe('timeout after 20ms')
+      expect(classifyResult(r)).toBe('error')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('runModel: 本文読み取りが期限を超えたら error 結果を返す', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => hang(init?.signal),
+      })) as unknown as typeof fetch
+    try {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined, 20)
+      expect(r.error).toBe('timeout after 20ms')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('取得がタイムアウトしても後続記事の処理を続ける', async () => {
+    const report = await buildReport(
+      ['https://a.test', 'https://b.test'],
+      ['m'],
+      {
+        fetchMarkdown: async (url) => {
+          if (url === 'https://a.test')
+            throw new Error('jina timeout after 20ms')
+          return 'Title: B\n本文'.repeat(10)
+        },
+        runModel: async (model) => okResult(model, '有効な要約'),
+      },
+    )
+    expect(report).toContain('本文取得失敗: jina timeout after 20ms')
+    expect(report).toContain('本文取得失敗: 1/2')
+    expect(report).toContain('有効な要約')
+  })
+})
+
 describe('runModel', () => {
   // #282: ヘッダー受信 (t=10) 後に本文読み取りが遅れる (t=110) 応答を再現する。
   async function latencyFor(res: {
