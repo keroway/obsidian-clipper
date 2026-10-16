@@ -99,14 +99,36 @@ async function readSampleUrls(): Promise<string[]> {
   }
 }
 
-async function fetchMarkdown(url: string, jinaKey?: string): Promise<string> {
+// 比較スクリプトの通信 1 回あたりの期限。ヘッダー受信だけでなく本文読み取り完了まで
+// 同じタイマーを維持し、finally で解除する (#287)。
+const REQUEST_TIMEOUT_MS = 60_000
+
+async function fetchMarkdown(
+  url: string,
+  jinaKey?: string,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<string> {
   const headers: Record<string, string> = {}
   if (jinaKey) headers.Authorization = `Bearer ${jinaKey}`
-  const res = await fetch(`https://r.jina.ai/${url}`, { headers })
-  if (!res.ok) throw new Error(`jina ${res.status}`)
-  const body = (await res.text()).trim()
-  if (body.length === 0) throw new Error('jina empty body')
-  return body
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, {
+      headers,
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`jina ${res.status}`)
+    const body = (await res.text()).trim()
+    if (body.length === 0) throw new Error('jina empty body')
+    return body
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error(`jina timeout after ${timeoutMs}ms`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function runModel(
@@ -115,13 +137,17 @@ async function runModel(
   model: string,
   md: string,
   title: string | undefined,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<ModelResult> {
   const started = Date.now()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
       {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           Authorization: `Bearer ${token}`,
           'content-type': 'application/json',
@@ -173,8 +199,12 @@ async function runModel(
       summary: '',
       latencyMs: Date.now() - started,
       foreign: [],
-      error: (e as Error).message,
+      error: controller.signal.aborted
+        ? `timeout after ${timeoutMs}ms`
+        : (e as Error).message,
     }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
