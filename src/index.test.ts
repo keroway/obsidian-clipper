@@ -3759,6 +3759,40 @@ describe('readJsonWithLimit（#237）', () => {
     })
   })
 
+  describe('cancel が reject しても 413 を維持する（#289）', () => {
+    function failingCancelRequest(headers: Record<string, string>): Request {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(2))
+        },
+        cancel() {
+          throw new Error('cancel failed')
+        },
+      })
+      return new Request('http://example.com/clip', {
+        method: 'POST',
+        headers,
+        body: stream,
+        // @ts-expect-error duplex は lib.dom 型に未収録
+        duplex: 'half',
+      })
+    }
+
+    it('Content-Length による早期拒否', async () => {
+      const req = failingCancelRequest({ 'content-length': '2' })
+      await expect(readJsonWithLimit(req, 1)).rejects.toMatchObject({
+        status: 413,
+      })
+    })
+
+    it('実読込量による拒否', async () => {
+      const req = failingCancelRequest({})
+      await expect(readJsonWithLimit(req, 1)).rejects.toMatchObject({
+        status: 413,
+      })
+    })
+  })
+
   it('上限内の JSON はそのまま解析し、不正な JSON は 400 を投げる', async () => {
     const ok = new Request('http://example.com/clip', {
       method: 'POST',
