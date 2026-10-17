@@ -10,7 +10,8 @@ export async function readTextWithLimit(
 ): Promise<string | null> {
   const declared = Number(res.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > maxBytes) {
-    await res.body?.cancel().catch(() => {})
+    // 上限超過は確定済み。cancel の完了を待つと pending のストリームで停止する (#291)
+    void res.body?.cancel().catch(() => {})
     return null
   }
   if (!res.body) return ''
@@ -23,7 +24,7 @@ export async function readTextWithLimit(
     if (done) break
     received += value.byteLength
     if (received > maxBytes) {
-      await reader.cancel().catch(() => {})
+      void reader.cancel().catch(() => {})
       return null
     }
     text += decoder.decode(value, { stream: true })

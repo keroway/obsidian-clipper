@@ -16,6 +16,7 @@ import {
   resolveMaxImageBytes,
 } from './attachment'
 import type { Bindings } from './bindings'
+import { readTextWithLimit } from './bounded-body'
 import { classifyJsonBody, detectContentKind } from './clip-input'
 import { readErrorSnippet } from './error-body'
 import { fetchArticle } from './fetch-article'
@@ -3790,6 +3791,56 @@ describe('readJsonWithLimit（#237）', () => {
       await expect(readJsonWithLimit(req, 1)).rejects.toMatchObject({
         status: 413,
       })
+    })
+  })
+
+  describe('cancel が永久に pending でも完了する（#291）', () => {
+    function pendingCancelStream(): ReadableStream<Uint8Array> {
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(2))
+        },
+        cancel() {
+          return new Promise<void>(() => {})
+        },
+      })
+    }
+
+    it('readJsonWithLimit: Content-Length 超過で 413', async () => {
+      const req = new Request('http://example.com/clip', {
+        method: 'POST',
+        headers: { 'content-length': '2' },
+        body: pendingCancelStream(),
+        // @ts-expect-error duplex は lib.dom 型に未収録
+        duplex: 'half',
+      })
+      await expect(readJsonWithLimit(req, 1)).rejects.toMatchObject({
+        status: 413,
+      })
+    })
+
+    it('readJsonWithLimit: 実読込量超過で 413', async () => {
+      const req = new Request('http://example.com/clip', {
+        method: 'POST',
+        body: pendingCancelStream(),
+        // @ts-expect-error duplex は lib.dom 型に未収録
+        duplex: 'half',
+      })
+      await expect(readJsonWithLimit(req, 1)).rejects.toMatchObject({
+        status: 413,
+      })
+    })
+
+    it('readTextWithLimit: 実読込量超過で null', async () => {
+      const res = new Response(pendingCancelStream())
+      await expect(readTextWithLimit(res, 1)).resolves.toBeNull()
+    })
+
+    it('readTextWithLimit: Content-Length 超過で null', async () => {
+      const res = new Response(pendingCancelStream(), {
+        headers: { 'content-length': '2' },
+      })
+      await expect(readTextWithLimit(res, 1)).resolves.toBeNull()
     })
   })
 
