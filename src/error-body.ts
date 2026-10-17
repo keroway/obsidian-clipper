@@ -27,7 +27,8 @@ export async function readErrorSnippet(res: Response): Promise<string> {
   } catch {
     return ''
   } finally {
-    await reader.cancel().catch(() => {})
+    // cancel の完了を待つと pending のストリームで停止する (#291, #293)
+    void reader.cancel().catch(() => {})
   }
   return text.slice(0, ERROR_DETAIL_MAX_CHARS)
 }

@@ -1110,6 +1110,28 @@ describe('readErrorSnippet（#225）', () => {
     expect(pulled).toBeLessThan(10)
   })
 
+  it('cancel が永久に pending でも先頭 200 文字を有限時間で返す (#293)', async () => {
+    let cancelCalled = false
+    const chunk = new TextEncoder().encode('x'.repeat(1024))
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(chunk)
+      },
+      cancel() {
+        cancelCalled = true
+        return new Promise<void>(() => {})
+      },
+    })
+    const out = await Promise.race([
+      readErrorSnippet(new Response(body)),
+      new Promise<string>((resolve) =>
+        setTimeout(() => resolve('TIMEOUT'), 1000),
+      ),
+    ])
+    expect(out).toBe('x'.repeat(200))
+    expect(cancelCalled).toBe(true)
+  })
+
   it('単一の巨大チャンクでもデコード入力は 800 バイト以内 (#235)', async () => {
     const decoded: number[] = []
     const original = TextDecoder.prototype.decode
