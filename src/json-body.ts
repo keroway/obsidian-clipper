@@ -20,11 +20,12 @@ function tooLarge(): HTTPException {
 }
 
 // 上限超過は確定済みなので、cancel の失敗 (reject) で 413 を上書きしない (#289)。
-async function cancelQuietly(
+// cancel の完了も待たない (pending のままでも 413 を返せるように, #291)。
+function cancelQuietly(
   target: { cancel(): Promise<void> } | null | undefined,
-): Promise<void> {
+): void {
   try {
-    await target?.cancel()
+    void target?.cancel().catch(() => {})
   } catch {
     // 413 を優先するため握り潰す
   }
@@ -39,7 +40,7 @@ export async function readBodyWithLimit(
 ): Promise<Uint8Array> {
   const declared = Number(req.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > maxBytes) {
-    await cancelQuietly(req.body)
+    cancelQuietly(req.body)
     throw tooLarge()
   }
 
@@ -52,7 +53,7 @@ export async function readBodyWithLimit(
       if (done) break
       total += value.byteLength
       if (total > maxBytes) {
-        await cancelQuietly(reader)
+        cancelQuietly(reader)
         throw tooLarge()
       }
       chunks.push(value)
