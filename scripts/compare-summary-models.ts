@@ -292,9 +292,12 @@ type ReportDeps = {
 // fetchMarkdown / runModel をモックして注入できる (#164 の回帰検証)。
 async function buildReport(
   urls: string[],
-  models: string[],
+  candidateModels: string[],
   deps: ReportDeps,
 ): Promise<string> {
+  // 重複指定は順序を保って一意化する。集計がモデル名キーのため、重複を残すと
+  // 二重実行と負の未実行件数になる (#299)。
+  const models = [...new Set(candidateModels)]
   const out: string[] = []
   out.push('# Workers AI 要約モデル比較レポート')
   out.push('')
