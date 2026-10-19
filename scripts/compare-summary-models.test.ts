@@ -319,4 +319,18 @@ describe('buildReport', () => {
       /\| `model-a` \| 2\/3 \| 1 \| 0 \| 0 \| 2 \| \d+ms \| 0\/2 \|/,
     )
   })
+
+  it('モデルの重複指定を一意化し、二重実行と負の未実行件数を防ぐ (#299)', async () => {
+    const runModel = vi.fn(async (model: string) => okResult(model, '要約'))
+    const report = await buildReport(
+      ['https://example.com/article'],
+      ['model-a', 'model-b', 'model-a'],
+      { fetchMarkdown: async () => 'Title: Example\n本文', runModel },
+    )
+
+    expect(runModel).toHaveBeenCalledTimes(2)
+    expect(report.match(/^\| `model-a` \|/gm)).toHaveLength(1)
+    expect(report).toMatch(/\| `model-a` \| 1\/1 \| 0 \|/)
+    expect(report).not.toContain('| -1 |')
+  })
 })
