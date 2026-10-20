@@ -7,6 +7,9 @@
 export const SUMMARY_EXCERPT_LIMIT = 6000
 export const SUMMARY_MAX_TOKENS = 300
 
+// 生成要約の文字数上限 (#270)。本番 (src/llm.ts) と比較スクリプトで共有する (#303)。
+export const SUMMARY_MAX_CHARS = 4000
+
 export const SUMMARY_SYSTEM_PROMPT =
   'あなたは技術記事を日本語で要約するアシスタントです。' +
   '出力は3〜5文の散文で、最初の1文に結論を置き、専門用語はそのまま残してください。' +

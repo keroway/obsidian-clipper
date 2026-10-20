@@ -27,6 +27,7 @@
 // 以前はここに手動コピーしていたが、本番側を変えたら必ず同期する運用負債があったため共有化した。
 import {
   buildSummaryUserPrompt,
+  SUMMARY_MAX_CHARS,
   SUMMARY_MAX_TOKENS,
   SUMMARY_SYSTEM_PROMPT,
 } from '../src/prompts'
@@ -189,6 +190,16 @@ async function runModel(
       }
     }
     const summary = (response ?? '').trim()
+    // 本番 (src/llm.ts assertSummaryLength) と同じく、上限超過は受理せずエラーにする (#303)
+    if (summary.length > SUMMARY_MAX_CHARS) {
+      return {
+        model,
+        summary: '',
+        latencyMs,
+        foreign: [],
+        error: `summary too long (${summary.length} > ${SUMMARY_MAX_CHARS} chars)`,
+      }
+    }
     const foreign = FOREIGN_SCRIPTS.filter((s) => s.re.test(summary)).map(
       (s) => s.name,
     )

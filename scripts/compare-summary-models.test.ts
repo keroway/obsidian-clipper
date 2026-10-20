@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { SUMMARY_MAX_CHARS } from '../src/prompts'
 import {
   buildReport,
   classifyResult,
@@ -180,6 +181,36 @@ describe('runModel', () => {
         const r = await runModel('acc', 'tok', 'model', 'body', undefined)
         expect(r.error).toContain('non-string response')
         expect(classifyResult(r)).toBe('error')
+      } finally {
+        globalThis.fetch = original
+      }
+    },
+  )
+
+  it.each([
+    [SUMMARY_MAX_CHARS, undefined],
+    [SUMMARY_MAX_CHARS + 1, 'summary too long'],
+  ])(
+    '要約長 %i 文字を本番と同じ上限で判定する (#303)',
+    async (length, expectedError) => {
+      const original = globalThis.fetch
+      globalThis.fetch = (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          result: { response: 'a'.repeat(length) },
+        }),
+      })) as unknown as typeof fetch
+      try {
+        const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+        if (expectedError) {
+          expect(r.error).toContain(expectedError)
+          expect(classifyResult(r)).toBe('error')
+        } else {
+          expect(r.error).toBeUndefined()
+          expect(classifyResult(r)).not.toBe('error')
+        }
       } finally {
         globalThis.fetch = original
       }
