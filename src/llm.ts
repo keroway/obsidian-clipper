@@ -4,6 +4,7 @@ import { readErrorSnippet } from './error-body'
 import {
   AUTO_TAG_SYSTEM_PROMPT,
   buildSummaryUserPrompt,
+  SUMMARY_MAX_CHARS,
   SUMMARY_MAX_TOKENS,
   SUMMARY_SYSTEM_PROMPT,
 } from './prompts'
@@ -17,7 +18,8 @@ export const WORKERS_AI_TIMEOUT_MS = 30_000
 // 収まるため、上限は異常応答 (巨大ノート生成) だけを弾く余裕を持たせた値にする。
 // 超過は throw し、要約は既存のフォールバック/要約失敗通知 (本文保存は継続) に接続する。
 const ANTHROPIC_RESPONSE_MAX_BYTES = 64 * 1024
-export const SUMMARY_MAX_CHARS = 4000
+
+export { SUMMARY_MAX_CHARS }
 
 function assertSummaryLength(provider: string, text: string): void {
   if (text.length > SUMMARY_MAX_CHARS) {
