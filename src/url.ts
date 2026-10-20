@@ -58,6 +58,10 @@ export function normalizeUrl(input: string): string {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     throw new HTTPException(400, { message: 'invalid url' })
   }
+  // userinfo (user:pass@) は Jina 向け fetch 引数・ノート・R2 メタデータへ複製されるため拒否 (#305)
+  if (u.username !== '' || u.password !== '') {
+    throw new HTTPException(400, { message: 'invalid url' })
+  }
   // X (旧 Twitter) ドメイン揺れの正規化
   if (u.hostname === 'mobile.twitter.com' || u.hostname === 'twitter.com') {
     u.hostname = 'x.com'
