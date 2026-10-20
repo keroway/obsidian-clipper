@@ -3650,6 +3650,21 @@ describe('POST /clip - text/markdown clip', () => {
     expect(content).toMatch(/^# memo only$/m)
   })
 
+  it('空白だけの title は無視して本文の最初の非空行にフォールバックする (#307)', async () => {
+    for (const title of ['   ', '\n\t']) {
+      const res = await postJson({ text: 'hello', title })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as { path: string }
+      expect(json.path).toContain('hello')
+
+      const stored = await env.VAULT.get(json.path)
+      // biome-ignore lint/style/noNonNullAssertion: assertion above guarantees non-null
+      const content = await stored!.text()
+      expect(content).toMatch(/^# hello$/m)
+      expect(content).toMatch(/^source_title: .*hello/m)
+    }
+  })
+
   it('returns 400 when neither url nor markdown/text is present', async () => {
     const res = await postJson({ title: 'nothing useful' })
     expect(res.status).toBe(400)
