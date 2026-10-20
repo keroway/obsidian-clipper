@@ -162,6 +162,22 @@ describe('normalizeUrl', () => {
   it('rejects non-http(s) schemes (data:)', () => {
     expect(() => normalizeUrl('data:text/plain,hi')).toThrow()
   })
+
+  it('rejects URLs with username and password (#305)', () => {
+    expect(() =>
+      normalizeUrl('https://alice:example-password@example.com/private'),
+    ).toThrow()
+  })
+
+  it('rejects URLs with username only (#305)', () => {
+    expect(() => normalizeUrl('https://alice@example.com/private')).toThrow()
+  })
+
+  it('rejects URLs with percent-encoded credentials (#305)', () => {
+    expect(() =>
+      normalizeUrl('https://al%69ce:p%40ss@example.com/private'),
+    ).toThrow()
+  })
 })
 
 // ─────────────────────────── sanitizeForFilename ───────────────────────────
@@ -3446,7 +3462,7 @@ describe('POST /clip - auto tagging', () => {
           Authorization: `Bearer ${env.SHARED_SECRET}`,
         },
         body: JSON.stringify({
-          url: 'https://user:pw@unknown-host-xyz.example/a/dropped-tags-notify-1?token=TEST_SECRET#frag',
+          url: 'https://unknown-host-xyz.example/a/dropped-tags-notify-1?token=TEST_SECRET#frag',
           tags: 'not-an-array',
         }),
       })
@@ -3456,7 +3472,7 @@ describe('POST /clip - auto tagging', () => {
         dropped.length > 0,
         `droppedTags の通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
-      // 未加工 URL (パス・クエリ・ユーザー情報) を Webhook へ送らない (#262)
+      // 未加工 URL (パス・クエリ) を Webhook (ユーザー情報は #305 で入口拒否) へ送らない (#262)
       for (const b of dropped) {
         expect(b).toContain('unknown-host-xyz.example')
         expect(b).not.toContain('TEST_SECRET')
@@ -3499,7 +3515,7 @@ describe('POST /clip - auto tagging', () => {
           Authorization: `Bearer ${env.SHARED_SECRET}`,
         },
         body: JSON.stringify({
-          url: 'https://user:pw@unknown-host-xyz.example/a/dropped-fields-notify-1?token=TEST_SECRET#frag',
+          url: 'https://unknown-host-xyz.example/a/dropped-fields-notify-1?token=TEST_SECRET#frag',
           title: 123,
         }),
       })
@@ -3511,7 +3527,7 @@ describe('POST /clip - auto tagging', () => {
         dropped.length > 0,
         `droppedFields の通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
-      // 未加工 URL (パス・クエリ・ユーザー情報) を Webhook へ送らない (#262)
+      // 未加工 URL (パス・クエリ) を Webhook (ユーザー情報は #305 で入口拒否) へ送らない (#262)
       for (const b of dropped) {
         expect(b).toContain('unknown-host-xyz.example')
         expect(b).not.toContain('TEST_SECRET')
