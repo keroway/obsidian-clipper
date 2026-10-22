@@ -103,7 +103,8 @@ export async function saveTextClip(
     .find((l) => l.trim().length > 0)
     ?.trim()
     .replace(/^#{1,6}\s+/, '')
-  const title = payload.title || firstLine || payload.note || undefined
+  const title =
+    payload.title?.trim() || firstLine || payload.note?.trim() || undefined
   const slug = makeSlug(title ?? 'note', 'note')
   const uniq = crypto.randomUUID().slice(0, 8)
   const filename = `${stamp}_${slug}_${uniq}.md`
