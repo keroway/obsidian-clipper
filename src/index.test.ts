@@ -2417,6 +2417,40 @@ describe('POST /clip integration', () => {
     expect(res.status).toBe(400)
   })
 
+  it('returns 400 for invalid UTF-8 bytes in JSON body (#309)', async () => {
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.SHARED_SECRET}`,
+    }
+    // 不正な単独バイト 0xFF / 途中で切れた多バイト列 (あ の先頭2バイト)
+    const bodies = [
+      Uint8Array.from([123, 34, 116, 101, 120, 116, 34, 58, 34, 255, 34, 125]),
+      Uint8Array.from([
+        123, 34, 116, 101, 120, 116, 34, 58, 34, 0xe3, 0x81, 34, 125,
+      ]),
+    ]
+    for (const body of bodies) {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers,
+        body,
+      })
+      expect(res.status).toBe(400)
+    }
+  })
+
+  it('accepts a literal U+FFFD in JSON body (#309)', async () => {
+    const res = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify({ text: '日本語�テキスト' }),
+    })
+    expect(res.status).toBe(200)
+  })
+
   it('returns 400 when url is missing', async () => {
     const res = await SELF.fetch('http://example.com/clip', {
       method: 'POST',
