@@ -75,7 +75,9 @@ export async function readJsonWithLimit(
 ): Promise<unknown> {
   const merged = await readBodyWithLimit(req, maxBytes)
   try {
-    return JSON.parse(new TextDecoder().decode(merged))
+    // fatal: 不正な UTF-8 を U+FFFD に置換せず例外にする (#309)
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false })
+    return JSON.parse(decoder.decode(merged))
   } catch {
     throw new HTTPException(400, { message: 'invalid JSON body' })
   }
