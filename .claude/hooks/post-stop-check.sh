@@ -108,6 +108,7 @@ while IFS= read -r file; do
   # biome ci + tsc --noEmit の対象: src 配下のコードと設定ファイル
   if [[ "$file" == src/* ]] \
     || [[ "$file" == scripts/*.ts ]] \
+    || [[ "$file" == client/*.js ]] \
     || [[ "$file" == "package.json" ]] \
     || [[ "$file" == "tsconfig.json" ]] \
     || [[ "$file" == "biome.json" ]] \

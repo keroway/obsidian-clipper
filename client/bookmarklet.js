@@ -20,30 +20,38 @@
  *   このブックマークレットはページの URL クリップ専用なので上記は実装していないが、
  *   別途 curl やショートカットから同じ Worker に投げられる。
  */
-(() => {
-  const WORKER_URL = 'https://obsidian-clipper.<your-subdomain>.workers.dev/clip';
-  const SECRET = 'REPLACE_WITH_SHARED_SECRET';
+;(() => {
+  const WORKER_URL =
+    'https://obsidian-clipper.<your-subdomain>.workers.dev/clip'
+  const SECRET = 'REPLACE_WITH_SHARED_SECRET'
 
-  const sel = String(window.getSelection() || '');
+  const sel = String(window.getSelection() || '')
   const payload = {
     url: location.href,
     title: document.title,
     selection: sel || undefined,
-  };
+  }
 
   // 軽量トースト
   const toast = (msg, ok) => {
-    const el = document.createElement('div');
-    el.textContent = msg;
+    const el = document.createElement('div')
+    el.textContent = msg
     Object.assign(el.style, {
-      position: 'fixed', right: '16px', bottom: '16px', zIndex: 2147483647,
-      padding: '10px 14px', borderRadius: '8px', fontSize: '14px',
-      color: '#fff', background: ok ? '#16a34a' : '#dc2626',
-      boxShadow: '0 4px 12px rgba(0,0,0,.2)', fontFamily: 'system-ui, sans-serif',
-    });
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2200);
-  };
+      position: 'fixed',
+      right: '16px',
+      bottom: '16px',
+      zIndex: 2147483647,
+      padding: '10px 14px',
+      borderRadius: '8px',
+      fontSize: '14px',
+      color: '#fff',
+      background: ok ? '#16a34a' : '#dc2626',
+      boxShadow: '0 4px 12px rgba(0,0,0,.2)',
+      fontFamily: 'system-ui, sans-serif',
+    })
+    document.body.appendChild(el)
+    setTimeout(() => el.remove(), 2200)
+  }
 
   fetch(WORKER_URL, {
     method: 'POST',
@@ -56,10 +64,10 @@
     .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
     .then(({ ok, j }) => {
       if (j && j.duplicate) {
-        toast('Already saved: ' + (j.path || ''), false);
-        return;
+        toast('Already saved: ' + (j.path || ''), false)
+        return
       }
-      toast(ok ? 'Saved: ' + (j.path || '') : 'Error: ' + JSON.stringify(j), ok);
+      toast(ok ? 'Saved: ' + (j.path || '') : 'Error: ' + JSON.stringify(j), ok)
     })
-    .catch((e) => toast('Network error: ' + e.message, false));
-})();
+    .catch((e) => toast('Network error: ' + e.message, false))
+})()

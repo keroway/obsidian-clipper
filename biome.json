@@ -4,6 +4,7 @@
     "includes": [
       "src/**/*.ts",
       "scripts/**/*.ts",
+      "client/**/*.js",
       "vitest.config.ts",
       "package.json"
     ]
