@@ -1,6 +1,6 @@
 # ADR 0012: 観測性 (クリップ成否と失敗種別の把握)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-25
 
 ## Context
