@@ -550,10 +550,22 @@ Other practices:
 Open implementation notes and historical TODOs are tracked in
 [`HANDOFF.md`](./HANDOFF.md) and [`plans/`](./plans/). Completed items include
 duplicate URL detection, Anthropic summaries with Workers AI fallback, Browser
-Rendering fallback, automatic tags, failure notifications, and Vitest coverage.
+Rendering fallback, automatic tags, failure notifications, Vitest coverage, and
+structured clip events (see below).
 
-The remaining low-priority candidate is observability through Workers Logpush or
-related Cloudflare logging features.
+## Observability
+
+Each authenticated `POST /clip` emits one structured log line (ADR 0012) to
+Workers Logs (`observability.enabled = true` in `wrangler.jsonc`). Fields:
+`event` (`clip`), `kind` (`url`/`text`/`image`/`unknown`), `outcome`
+(`saved`/`duplicate`/`error`), `status`, `durationMs`, and for URL clips `host`,
+`fetchVia`, `fetchFailed`, `summaryFailed`, `tagsFailed`. URL paths/queries,
+titles, bodies, tags and credentials are never logged.
+
+To check: Cloudflare dashboard → Workers → obsidian-clipper → Observability, then
+filter `event = clip` and group by `outcome` or `fetchFailed`. Live view:
+`bun run tail`. The Free plan keeps logs for 3 days only; for longer trends add
+Analytics Engine in a separate ADR.
 
 Feature work should start with an ADR in `docs/adr/`.
 

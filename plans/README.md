@@ -33,14 +33,13 @@ ADR 0009 / ADR 0010 へ直行したため、経緯はその ADR を読むこと�
 | 4. タグ自動付与       | DONE      | plan 003 / ADR 0008 (allowlist + LLM タグ)        |
 | 5. 失敗通知 (Webhook) | DONE      | #38                                           |
 | 6. テスト             | DONE      | #27 (vitest + vitest-pool-workers)            |
-| 7. 観測性             | TODO      | 未実装                                        |
+| 7. 観測性             | DONE      | #227 / ADR 0012 (Workers Logs の構造化イベント) |
 
-残る未実装は #7 観測性のみ。新規 plan はそこから起こすこと (現時点では実運用上の必要性が
-確認できていないため、将来検討事項として据え置く。plan化は必要になった時点で行う)。
+HANDOFF の TODO 候補はすべて実装済み。長期集計が必要になれば Analytics Engine を別 ADR で検討する。
 
 - ~~本文取得堅牢化 (HANDOFF #3) → **plan 002** (High)~~ DONE
 - ~~タグ自動付与 (HANDOFF #4) → **plan 003** (Medium)~~ DONE
-- 観測性 (HANDOFF #7) → 未起案 (Low、個人ツールでは優先度低。必要になったら plan 化)
+- ~~観測性 (HANDOFF #7) → ADR 0012~~ DONE
 
 ## 全体見直し Phase 2/3 (2026-07-11)
 

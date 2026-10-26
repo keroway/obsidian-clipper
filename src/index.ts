@@ -54,6 +54,7 @@ import {
 import { generateTags, summarizeWithProvider } from './llm'
 import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
+import { buildClipEvent, type ClipDetails, logClipEvent } from './observe'
 import { autoTagsEnabled, hostTagsFor, mergeTags } from './tags'
 import {
   assertFieldWithinLimit,
@@ -70,9 +71,10 @@ import {
   writeUrlIndexCAS,
 } from './url-index'
 
-type AppContext = Context<{ Bindings: Bindings }>
+type AppEnv = { Bindings: Bindings; Variables: { clipDetails: ClipDetails } }
+type AppContext = Context<AppEnv>
 
-const app = new Hono<{ Bindings: Bindings }>()
+const app = new Hono<AppEnv>()
 
 app.get('/', (c) =>
   c.text(
@@ -109,13 +111,39 @@ app.use(
 app.use(
   '/clip',
   bearerAuth({
-    verifyToken: (token: string, c: Context<{ Bindings: Bindings }>) =>
+    verifyToken: (token: string, c: AppContext) =>
       timingSafeEqual(token, c.env.SHARED_SECRET),
   }),
 )
 
+// クリップ 1 件 1 行の構造化イベント (ADR 0012)。認証後のリクエストのみ対象。
+// onError が c.res を差し替えるので、next() の後なら例外経路のステータスも拾える。
+app.use('/clip', async (c, next) => {
+  const started = Date.now()
+  c.set('clipDetails', {})
+  await next()
+  let duplicate = false
+  try {
+    if (c.res.headers.get('content-type')?.includes('application/json')) {
+      const json = (await c.res.clone().json()) as { duplicate?: unknown }
+      duplicate = json.duplicate === true
+    }
+  } catch {
+    // 本文が読めなくてもイベント出力は止めない
+  }
+  logClipEvent(
+    buildClipEvent({
+      details: c.get('clipDetails'),
+      status: c.res.status,
+      duplicate,
+      durationMs: Date.now() - started,
+    }),
+  )
+})
+
 app.post('/clip', async (c) => {
   if (detectContentKind(c.req.header('content-type')) === 'multipart') {
+    c.set('clipDetails', { kind: 'image' })
     return handleImageClip(c)
   }
 
@@ -162,6 +190,7 @@ app.post('/clip', async (c) => {
       )
     }
   }
+  c.set('clipDetails', { kind: classified.kind })
   return classified.kind === 'url'
     ? await handleUrlClip(c, classified.body)
     : await handleTextClip(c, classified.body)
@@ -235,6 +264,12 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 
   // ---- 1. 本文取得 (Jina Reader + リトライ + Browser Rendering フォールバック) ----
   const article = await fetchArticle(url, c.env, maxFieldBytes)
+  const details: ClipDetails = {
+    kind: 'url',
+    host: hostname(url) || undefined,
+    fetchVia: article.via ?? 'none',
+  }
+  c.set('clipDetails', details)
   const articleTitle: string | undefined =
     payload.title?.trim() || article.title
   let articleMd = article.md
@@ -247,6 +282,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     fetchErr = `article body too large (> ${maxFieldBytes} bytes)`
     articleMd = ''
   }
+  details.fetchFailed = !!fetchErr
   if (fetchErr && c.env.NOTIFY_WEBHOOK_URL) {
     c.executionCtx.waitUntil(
       notifyWebhook(
@@ -268,6 +304,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     wantSummary
       ? summarizeWithProvider(c.env, articleMd, articleTitle).catch((e) => {
           console.warn('summarize failed', (e as Error).message)
+          details.summaryFailed = true
           if (c.env.NOTIFY_WEBHOOK_URL) {
             c.executionCtx.waitUntil(
               notifyWebhook(
@@ -282,6 +319,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     wantTags
       ? generateTags(c.env, articleMd, articleTitle).catch((e) => {
           console.warn('auto-tag failed', (e as Error).message)
+          details.tagsFailed = true
           // 要約・本文取得と同じく webhook へも通知する。ここだけ
           // console.warn 止まりだと、LLM 障害でタグが付かなくなっても
           // Cloudflare のログを能動的に見ない限り気づけない（#70）。

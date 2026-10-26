@@ -36,6 +36,7 @@ import {
   truncateByUtf8Bytes,
 } from './note'
 import { notifyWebhook, WEBHOOK_TIMEOUT_MS } from './notify'
+import { buildClipEvent } from './observe'
 import {
   autoTagsEnabled,
   hostTagsFor,
@@ -4692,5 +4693,127 @@ describe('POST /clip - image clip', () => {
       body: form,
     })
     expect(res.status).toBe(401)
+  })
+})
+
+// ─────────── 観測性: クリップ 1 件 1 行の構造化イベント (ADR 0012) ───────────
+describe('buildClipEvent', () => {
+  it('derives outcome from status and duplicate flag', () => {
+    const base = { details: { kind: 'url' as const }, durationMs: 5 }
+    expect(
+      buildClipEvent({ ...base, status: 200, duplicate: false }).outcome,
+    ).toBe('saved')
+    expect(
+      buildClipEvent({ ...base, status: 200, duplicate: true }).outcome,
+    ).toBe('duplicate')
+    expect(
+      buildClipEvent({ ...base, status: 413, duplicate: false }).outcome,
+    ).toBe('error')
+  })
+
+  it('drops undefined fields and defaults kind to unknown', () => {
+    const ev = buildClipEvent({
+      details: { host: undefined },
+      status: 400,
+      duplicate: false,
+      durationMs: 1,
+    })
+    expect(ev.kind).toBe('unknown')
+    expect('host' in ev).toBe(false)
+  })
+})
+
+describe('POST /clip - structured clip event (ADR 0012)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const post = (body: unknown) =>
+    SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.SHARED_SECRET}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+  const clipEvents = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls
+      .map((args) => args[0])
+      .filter(
+        (a): a is Record<string, unknown> =>
+          typeof a === 'object' && a !== null && 'event' in a,
+      )
+
+  it('logs one event without URL path, query, title or body', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
+      input.toString().startsWith('https://r.jina.ai/')
+        ? new Response('Title: SECRET-TITLE\n\nSECRET-BODY', { status: 200 })
+        : new Response('nope', { status: 404 }),
+    )
+    const res = await post({
+      url: 'https://example.com/private/path?token=SECRET-QUERY',
+      note: 'SECRET-NOTE',
+      tags: ['SECRET-TAG'],
+    })
+    expect(res.status).toBe(200)
+    const events = clipEvents(logSpy)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      event: 'clip',
+      kind: 'url',
+      outcome: 'saved',
+      status: 200,
+      host: 'example.com',
+      fetchVia: 'jina',
+      fetchFailed: false,
+    })
+    expect(typeof events[0].durationMs).toBe('number')
+    const serialized = JSON.stringify(events[0])
+    for (const secret of ['SECRET', '/private', env.SHARED_SECRET, 'Bearer']) {
+      expect(serialized).not.toContain(secret)
+    }
+  })
+
+  it('flags fetchFailed and still reports saved', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('rate', { status: 429 }),
+    )
+    const res = await post({ url: 'https://example.com/obs-fetch-fail-1' })
+    expect(res.status).toBe(200)
+    expect(clipEvents(logSpy)[0]).toMatchObject({
+      outcome: 'saved',
+      fetchFailed: true,
+    })
+  })
+
+  it('reports outcome=error with kind=unknown for a rejected request', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const res = await post({ nothing: true })
+    expect(res.status).toBe(400)
+    expect(clipEvents(logSpy)[0]).toMatchObject({
+      kind: 'unknown',
+      outcome: 'error',
+      status: 400,
+    })
+  })
+
+  it('reports text clip kind and no event for unauthenticated requests', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const ok = await post({ text: 'hello obs' })
+    expect(ok.status).toBe(200)
+    const unauth = await SELF.fetch('http://example.com/clip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'x' }),
+    })
+    expect(unauth.status).toBe(401)
+    const events = clipEvents(logSpy)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ kind: 'text', outcome: 'saved' })
   })
 })
