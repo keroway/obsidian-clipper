@@ -19,14 +19,14 @@
     "hono": "^4.13.13"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
+    "@biomejs/biome": "^2.6.2",
     "@cloudflare/vitest-pool-workers": "^0.23.0",
-    "@cloudflare/workers-types": "^5.20261016.1",
-    "@types/bun": "^1.4.3",
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "@types/bun": "^1.4.4",
     "lefthook": "^2.2.2",
     "typescript": "^7.0.2",
     "vitest": "^4.1.12",
-    "wrangler": "^4.151.0"
+    "wrangler": "^4.152.0"
   },
   "overrides": {
     "sharp": "0.35.5",
