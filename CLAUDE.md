@@ -94,6 +94,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `src/note.ts` — `renderNote` / ファイル名サニタイズ
   - `src/url-index.ts` — URL/画像 重複検知インデックス (読み書き)
   - `src/notify.ts` — Webhook 通知
+  - `src/observe.ts` — クリップ 1 件 1 行の構造化イベント (ADR 0012)。機密を載せない
   - `src/time.ts` — JST タイムスタンプ生成
 
   新規ユーティリティは責務に応じて該当モジュールに追加すること。どの責務にも属さない場合は新モジュールを切り出す。
