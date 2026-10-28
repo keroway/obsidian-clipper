@@ -4504,6 +4504,7 @@ describe('POST /clip - image clip', () => {
   it('embed note の PUT だけ失敗しても保存済み画像の path を 200 で返す (#255)', async () => {
     const originalPut = env.VAULT.put.bind(env.VAULT)
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(env.VAULT, 'put').mockImplementation(((
       key: string,
       value: unknown,
@@ -4536,6 +4537,18 @@ describe('POST /clip - image clip', () => {
       expect(json.notePath).toBeUndefined()
       expect(await env.VAULT.head(json.path)).not.toBeNull()
       expect(warnSpy).toHaveBeenCalled()
+      const events = logSpy.mock.calls
+        .map((args) => args[0])
+        .filter(
+          (a): a is Record<string, unknown> =>
+            typeof a === 'object' && a !== null && 'event' in a,
+        )
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({
+        kind: 'image',
+        outcome: 'saved',
+        noteFailed: true,
+      })
     } finally {
       vi.restoreAllMocks()
     }
@@ -4548,6 +4561,7 @@ describe('POST /clip - image clip', () => {
 
     const originalPut = env.VAULT.put.bind(env.VAULT)
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(env.VAULT, 'put').mockImplementation(((
       key: string,
       value: unknown,
@@ -4580,6 +4594,18 @@ describe('POST /clip - image clip', () => {
       expect(json.noteFailed).toBe(true)
       expect(json.notePath).toBeUndefined()
       expect(warnSpy).toHaveBeenCalled()
+      const events = logSpy.mock.calls
+        .map((args) => args[0])
+        .filter(
+          (a): a is Record<string, unknown> =>
+            typeof a === 'object' && a !== null && 'event' in a,
+        )
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({
+        kind: 'image',
+        outcome: 'duplicate',
+        noteFailed: true,
+      })
     } finally {
       vi.restoreAllMocks()
     }

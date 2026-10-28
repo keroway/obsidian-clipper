@@ -16,6 +16,7 @@ export type ClipDetails = {
   fetchFailed?: boolean
   summaryFailed?: boolean
   tagsFailed?: boolean
+  noteFailed?: boolean
 }
 
 export type ClipEvent = ClipDetails & {
