@@ -69,6 +69,18 @@ export async function readBodyWithLimit(
   return merged
 }
 
+// 対になっていない上位/下位サロゲート。JSON の "\ud800" エスケープは正常な UTF-8
+// のまま通過するが、保存時の UTF-8 化で U+FFFD に化けるため弾く (#323)。
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+function rejectLoneSurrogate(_key: string, value: unknown): unknown {
+  if (typeof value === 'string' && LONE_SURROGATE_RE.test(value)) {
+    throw new Error('lone surrogate')
+  }
+  return value
+}
+
 export async function readJsonWithLimit(
   req: Request,
   maxBytes: number,
@@ -77,7 +89,7 @@ export async function readJsonWithLimit(
   try {
     // fatal: 不正な UTF-8 を U+FFFD に置換せず例外にする (#309)
     const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false })
-    return JSON.parse(decoder.decode(merged))
+    return JSON.parse(decoder.decode(merged), rejectLoneSurrogate)
   } catch {
     throw new HTTPException(400, { message: 'invalid JSON body' })
   }
