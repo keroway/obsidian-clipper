@@ -238,6 +238,8 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 
   const url = normalizeUrl(payload.url)
   assertFieldWithinLimit(url, maxFieldBytes, 'url')
+  // 重複応答・重複確認の失敗でも host 別に集計できるよう、本文取得より前に設定する (#321)。
+  c.set('clipDetails', { kind: 'url', host: hostname(url) || undefined })
 
   const refresh = c.req.query('refresh') === '1'
 
