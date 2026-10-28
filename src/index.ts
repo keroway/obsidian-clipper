@@ -55,7 +55,7 @@ import { generateTags, summarizeWithProvider } from './llm'
 import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
 import { buildClipEvent, type ClipDetails, logClipEvent } from './observe'
-import { autoTagsEnabled, hostTagsFor, mergeTags } from './tags'
+import { autoTagsEnabled, hasValidTag, hostTagsFor, mergeTags } from './tags'
 import {
   assertFieldWithinLimit,
   assertTagsWithinLimit,
@@ -298,7 +298,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   const manualTags = payload.tags ?? []
   const wantSummary = c.env.ENABLE_SUMMARY === 'true' && articleMd.length > 200
   const wantTags =
-    autoTagsEnabled(c.env) && manualTags.length === 0 && articleMd.length > 200
+    autoTagsEnabled(c.env) && !hasValidTag(manualTags) && articleMd.length > 200
 
   const [summary, llmTags] = await Promise.all([
     wantSummary
