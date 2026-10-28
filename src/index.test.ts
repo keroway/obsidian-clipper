@@ -3999,6 +3999,22 @@ describe('readJsonWithLimit（#237）', () => {
       status: 400,
     })
   })
+
+  it('孤立サロゲートは 400、正しいペアと U+FFFD は受理する (#323)', async () => {
+    const read = (body: string) =>
+      readJsonWithLimit(
+        new Request('http://example.com/clip', { method: 'POST', body }),
+        1000,
+      )
+    for (const esc of ['\\ud800', '\\udc00', 'a\\ud800b', '\\udc00\\ud800']) {
+      await expect(read(`{"text":["x${esc}y"]}`)).rejects.toMatchObject({
+        status: 400,
+      })
+    }
+    await expect(read('{"text":"😀\\ud83d\\ude00\\ufffd"}')).resolves.toEqual({
+      text: '😀😀�',
+    })
+  })
 })
 
 // ─────────── Integration: image clip (multipart/form-data, ADR 0011) ───────────
