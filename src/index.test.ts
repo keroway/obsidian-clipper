@@ -4829,6 +4829,22 @@ describe('POST /clip - structured clip event (ADR 0012)', () => {
     }
   })
 
+  it('records host on the duplicate response event without path or query (#321)', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('Title: T\n\nBODY', { status: 200 }),
+    )
+    const url = 'https://example.com/obs-dup-host-321/SECRET-PATH?q=SECRET-Q'
+    expect((await post({ url })).status).toBe(200)
+    const dup = await post({ url })
+    expect(((await dup.json()) as { duplicate?: boolean }).duplicate).toBe(true)
+    const events = clipEvents(logSpy)
+    expect(events).toHaveLength(2)
+    expect(events[1]).toMatchObject({ kind: 'url', host: 'example.com' })
+    const serialized = JSON.stringify(events[1])
+    expect(serialized).not.toContain('SECRET')
+  })
+
   it('flags fetchFailed and still reports saved', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
