@@ -442,6 +442,9 @@ async function handleImageClip(c: AppContext) {
     c.executionCtx.waitUntil(p),
   )
 
+  if (result.noteFailed) {
+    c.set('clipDetails', { ...c.get('clipDetails'), noteFailed: true })
+  }
   if (result.duplicate) {
     return c.json({
       ok: false,
