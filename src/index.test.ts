@@ -3284,6 +3284,58 @@ describe('POST /clip - auto tagging', () => {
     }
   })
 
+  /// 手動タグが正規化で全て消える入力 (空白・記号のみ) のとき、自動タグ生成を
+  /// スキップしないこと（#311）。有効な手動タグがあるときだけ生成を省略する。
+  it.each([
+    { name: 'empty array', tags: [], calls: 1, tag: 'typescript' },
+    { name: 'whitespace only', tags: [' '], calls: 1, tag: 'typescript' },
+    { name: 'symbols only', tags: ['!!!'], calls: 1, tag: 'typescript' },
+    { name: 'valid manual tag', tags: ['mine'], calls: 0, tag: 'mine' },
+  ])(
+    'auto-tag generation with $name manual tags',
+    async ({ tags, calls, tag }) => {
+      const testEnv = env as typeof env & {
+        ENABLE_AUTO_TAGS?: string
+        AI: unknown
+      }
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) {
+          return new Response(
+            `Title: T\n\n${'Body content here. '.repeat(20)}`,
+            {
+              status: 200,
+            },
+          )
+        }
+        return new Response('upstream error', { status: 500 })
+      })
+      const run = vi.fn(async () => ({ response: 'typescript' }))
+      const original = { autoTags: testEnv.ENABLE_AUTO_TAGS, ai: testEnv.AI }
+      testEnv.ENABLE_AUTO_TAGS = 'true'
+      testEnv.AI = { run } as unknown as typeof testEnv.AI
+      try {
+        const res = await SELF.fetch('http://example.com/clip', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.SHARED_SECRET}`,
+          },
+          body: JSON.stringify({
+            url: `https://unknown-host-xyz.example/a/tag-invalid-manual-${calls}-${tags.join('').length}-${tag}`,
+            tags,
+          }),
+        })
+        const body = (await res.json()) as { ok: boolean; tags: string[] }
+        expect(body.ok).toBe(true)
+        expect(run).toHaveBeenCalledTimes(calls)
+        expect(body.tags).toContain(tag)
+      } finally {
+        testEnv.ENABLE_AUTO_TAGS = original.autoTags
+        testEnv.AI = original.ai
+      }
+    },
+  )
+
   /// urls.json が壊れていて writeUrlIndexCAS が書き込みをスキップしたとき、
   /// 本文取得/要約/タグ生成と同じく webhook へ通知すること（#101）。
   ///
