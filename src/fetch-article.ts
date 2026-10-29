@@ -16,6 +16,9 @@ const JINA_TIMEOUT_MS = 20_000
 const BROWSER_RENDERING_TIMEOUT_MS = 30_000
 const JINA_MAX_RETRIES = 2
 const JINA_RETRY_STATUS = new Set([429, 503])
+// Browser Rendering の JSON 応答の受信上限計算用 (本文上限とは別, #327)
+const JSON_ESCAPE_FACTOR = 6
+const JSON_ENVELOPE_BYTES = 1024
 
 function extractJinaTitle(md: string): string | undefined {
   // 空白は水平空白に限る。\s だと空の Title 行から次行まで取り込んでしまう (#280)
@@ -201,19 +204,27 @@ async function fetchViaBrowserRendering(
       throw new Error(`${res.status}${text ? `: ${text}` : ''}`)
     }
     // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
-    // JSON エンベロープ分を含む生バイト数で上限判定する (#222)。
-    const raw = await readTextWithLimit(res, maxBytes)
+    // 受信上限は JSON エンベロープと最悪ケース (制御文字 1 バイト = \uXXXX の 6 バイト)
+    // のエスケープ分を見込んだ有限値にし、本文上限は取り出した Markdown の UTF-8
+    // バイト数で判定する。Jina 経路と同じ本文が同じ結果になるようにする (#327)。
+    const raw = await readTextWithLimit(
+      res,
+      maxBytes * JSON_ESCAPE_FACTOR + JSON_ENVELOPE_BYTES,
+    )
     if (raw === null) return null
     const data = JSON.parse(raw) as {
       success?: boolean
       result?: string | { markdown?: string }
       errors?: unknown
     }
-    if (typeof data.result === 'string') return data.result.trim()
-    if (data.result && typeof data.result.markdown === 'string') {
-      return data.result.markdown.trim()
-    }
-    return ''
+    const md =
+      typeof data.result === 'string'
+        ? data.result
+        : typeof data.result?.markdown === 'string'
+          ? data.result.markdown
+          : ''
+    if (new TextEncoder().encode(md).byteLength > maxBytes) return null
+    return md.trim()
   } finally {
     clear()
   }

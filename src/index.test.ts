@@ -1451,6 +1451,43 @@ describe('fetchArticle', () => {
     expect(r.err).toContain('browser-rendering article body too large')
   })
 
+  // 本文上限は Markdown 本体で判定し、JSON エンベロープ/エスケープ分は含めない (#327)
+  it('accepts a Browser Rendering body of exactly maxBytes despite JSON envelope and escapes', async () => {
+    const brFetch = (result: string) =>
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) {
+          return new Response('busy', {
+            status: 503,
+            headers: { 'retry-after': '0' },
+          })
+        }
+        return new Response(JSON.stringify({ success: true, result }), {
+          status: 200,
+        })
+      })
+    const brEnv3 = {
+      CF_ACCOUNT_ID: 'acc-123',
+      BROWSER_RENDERING_API_TOKEN: 'br-token',
+    } as Bindings
+
+    brFetch('a'.repeat(100))
+    const ok = await fetchArticle('https://example.com/br', brEnv3, 100)
+    expect(ok.err).toBeUndefined()
+    expect(ok.via).toBe('browser-rendering')
+    expect(ok.md).toHaveLength(100)
+
+    // 改行・引用符はエスケープで JSON 上 2 倍になるが本文は 100 バイト
+    brFetch(`${'a"\n'.repeat(33)}a`)
+    const esc = await fetchArticle('https://example.com/br', brEnv3, 100)
+    expect(esc.err).toBeUndefined()
+    expect(esc.md).toHaveLength(100)
+
+    brFetch('a'.repeat(101))
+    const over = await fetchArticle('https://example.com/br', brEnv3, 100)
+    expect(over.md).toBe('')
+    expect(over.err).toContain('browser-rendering article body too large')
+  })
+
   it('sends Authorization: Bearer header when JINA_API_KEY is set', async () => {
     let capturedHeaders: HeadersInit | undefined
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
