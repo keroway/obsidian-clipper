@@ -1604,6 +1604,31 @@ describe('fetchArticle', () => {
     expect(r.err).toBeTruthy()
   })
 
+  it('treats browser-rendering success=false as a failure even with a non-empty result (#329)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('rate', { status: 429 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            result: 'Title: BR\n\nPartial.',
+            errors: [{ code: 1, message: 'render failed' }],
+          }),
+          { status: 200 },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/sf', brEnv)
+    expect(r.md).toBe('')
+    expect(r.via).toBeUndefined()
+    expect(r.err).toContain('browser-rendering success=false: render failed')
+  })
+
   it('treats jina 200 with empty body as a failure, not success (#149)', async () => {
     let calls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {

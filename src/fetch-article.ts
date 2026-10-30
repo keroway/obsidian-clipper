@@ -180,6 +180,15 @@ async function fetchWithTimeout(
   }
 }
 
+// errors は [{ code, message }] 想定。形が違えば出さない (ログ/ノートへの混入を避ける)。
+function describeErrors(errors: unknown): string {
+  if (!Array.isArray(errors)) return ''
+  const msgs = errors
+    .map((e) => (e as { message?: unknown } | null)?.message)
+    .filter((m): m is string => typeof m === 'string' && m !== '')
+  return msgs.length ? `: ${msgs.join('; ').slice(0, 200)}` : ''
+}
+
 async function fetchViaBrowserRendering(
   url: string,
   env: Bindings,
@@ -216,6 +225,10 @@ async function fetchViaBrowserRendering(
       success?: boolean
       result?: string | { markdown?: string }
       errors?: unknown
+    }
+    // success=false は result が非空でも失敗として扱う (#329)。
+    if (data.success === false) {
+      throw new Error(`success=false${describeErrors(data.errors)}`)
     }
     const md =
       typeof data.result === 'string'
