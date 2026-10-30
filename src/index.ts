@@ -52,6 +52,7 @@ import {
   readJsonWithLimit,
 } from './json-body'
 import { generateTags, summarizeWithProvider } from './llm'
+import { multipartTextPartsAreValidUtf8 } from './multipart-utf8'
 import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
 import { buildClipEvent, type ClipDetails, logClipEvent } from './observe'
@@ -428,10 +429,19 @@ async function handleImageClip(c: AppContext) {
     maxImageBytes + 3 * maxFieldBytes + MULTIPART_OVERHEAD_BYTES
   const rawBody = await readBodyWithLimit(c.req.raw, precheckLimit)
 
+  // formData() は文字列パートの不正 UTF-8 を U+FFFD に置換して成功させるため、
+  // 解析前に生バイトで検証して 400 にする (#331)。
+  const contentType = c.req.header('content-type') ?? ''
+  if (!multipartTextPartsAreValidUtf8(rawBody, contentType)) {
+    throw new HTTPException(400, {
+      message: 'invalid UTF-8 in multipart field',
+    })
+  }
+
   let form: FormData
   try {
     form = await new Response(rawBody, {
-      headers: { 'content-type': c.req.header('content-type') ?? '' },
+      headers: { 'content-type': contentType },
     }).formData()
   } catch {
     throw new HTTPException(400, { message: 'invalid multipart body' })
