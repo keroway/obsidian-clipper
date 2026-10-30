@@ -4285,6 +4285,54 @@ describe('POST /clip - image clip', () => {
     }
   })
 
+  /// multipart の文字列パートに不正な UTF-8 があると U+FFFD に置換されて保存成功に
+  /// なっていた（#331）。生バイトの multipart を組み立てて 400 で拒否する。
+  describe('文字列パートの UTF-8 検証（#331）', () => {
+    const enc = new TextEncoder()
+    const postRaw = (titleBytes: number[]) => {
+      const parts: Uint8Array[] = [
+        enc.encode(
+          '--local\r\nContent-Disposition: form-data; name="image"; filename="sample.png"\r\nContent-Type: image/png\r\n\r\n',
+        ),
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff]),
+        enc.encode(
+          '\r\n--local\r\nContent-Disposition: form-data; name="title"\r\n\r\n',
+        ),
+        new Uint8Array(titleBytes),
+        enc.encode('\r\n--local--\r\n'),
+      ]
+      const total = parts.reduce((n, p) => n + p.length, 0)
+      const body = new Uint8Array(total)
+      let off = 0
+      for (const p of parts) {
+        body.set(p, off)
+        off += p.length
+      }
+      return SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+          'Content-Type': 'multipart/form-data; boundary=local',
+        },
+        body,
+      })
+    }
+
+    it('title に不正な UTF-8 (0xFF) があれば 400 で拒否する', async () => {
+      const res = await postRaw([
+        ...enc.encode('before'),
+        0xff,
+        ...enc.encode('after'),
+      ])
+      expect(res.status).toBe(400)
+    })
+
+    it('正常な日本語と正当な U+FFFD の title は受理する', async () => {
+      const res = await postRaw([...enc.encode('日本語�ok')])
+      expect(res.status).toBe(200)
+    })
+  })
+
   /// 申告 MIME/拡張子が image/png でも、実バイト列が SVG(や他の任意バイト列)なら
   /// 415 で拒否すること（#105）。ADR 0011 の SVG 除外方針を MIME 偽装で回避できない
   /// ようにする実バイト検証(matchesImageMagicBytes)の統合テスト。
