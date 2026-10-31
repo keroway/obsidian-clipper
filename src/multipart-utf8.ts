@@ -27,6 +27,17 @@ function indexOfBytes(
   return -1
 }
 
+// Content-Disposition ヘッダーの実際の filename / filename* パラメータだけをファイル判定の根拠にする (#333)。
+// 他ヘッダーや引用符内の "filename=" では判定しない。
+function hasFilenameParam(headers: string): boolean {
+  for (const line of headers.split('\r\n')) {
+    if (!/^content-disposition\s*:/i.test(line)) continue
+    const unquoted = line.replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    if (/;\s*filename\*?\s*=/i.test(unquoted)) return true
+  }
+  return false
+}
+
 // 文字列パート (filename を持たないパート) のバイト列が不正な UTF-8 を含むなら false。
 // boundary が取れない/構造が壊れている場合は判定せず true を返す
 // (構造エラーは後続の formData() が 400 にする)。
@@ -65,7 +76,7 @@ export function multipartTextPartsAreValidUtf8(
     const bodyEnd = next === -1 ? body.length : next - 2
 
     const headers = latin1.decode(body.subarray(headStart + 2, headEnd))
-    if (!/filename\s*=|filename\*\s*=/i.test(headers)) {
+    if (!hasFilenameParam(headers)) {
       try {
         decoder.decode(body.subarray(bodyStart, bodyEnd))
       } catch {

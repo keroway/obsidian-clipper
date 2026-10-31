@@ -4289,15 +4289,16 @@ describe('POST /clip - image clip', () => {
   /// なっていた（#331）。生バイトの multipart を組み立てて 400 で拒否する。
   describe('文字列パートの UTF-8 検証（#331）', () => {
     const enc = new TextEncoder()
-    const postRaw = (titleBytes: number[]) => {
+    const postRaw = (
+      titleBytes: number[],
+      titleHeaders = 'Content-Disposition: form-data; name="title"',
+    ) => {
       const parts: Uint8Array[] = [
         enc.encode(
           '--local\r\nContent-Disposition: form-data; name="image"; filename="sample.png"\r\nContent-Type: image/png\r\n\r\n',
         ),
         new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff]),
-        enc.encode(
-          '\r\n--local\r\nContent-Disposition: form-data; name="title"\r\n\r\n',
-        ),
+        enc.encode(`\r\n--local\r\n${titleHeaders}\r\n\r\n`),
         new Uint8Array(titleBytes),
         enc.encode('\r\n--local--\r\n'),
       ]
@@ -4324,6 +4325,22 @@ describe('POST /clip - image clip', () => {
         0xff,
         ...enc.encode('after'),
       ])
+      expect(res.status).toBe(400)
+    })
+
+    it('追加ヘッダーの filename= では検証を迂回できない (#333)', async () => {
+      const res = await postRaw(
+        [...enc.encode('before'), 0xff],
+        'Content-Disposition: form-data; name="title"\r\nX-Info: filename=fake',
+      )
+      expect(res.status).toBe(400)
+    })
+
+    it('引用符内の filename= でも検証を迂回できない (#333)', async () => {
+      const res = await postRaw(
+        [...enc.encode('before'), 0xff],
+        'Content-Disposition: form-data; name="title"; x="; filename=fake"',
+      )
       expect(res.status).toBe(400)
     })
 
