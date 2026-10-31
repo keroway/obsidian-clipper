@@ -3940,6 +3940,26 @@ describe('POST /clip - text/markdown clip', () => {
 })
 
 describe('readJsonWithLimit（#237）', () => {
+  it('Unicode エスケープで膨らんだ同一内容も通常表記と同じく受理する（#337）', async () => {
+    const maxFieldBytes = 1024
+    const value = 'a'.repeat(maxFieldBytes)
+    const plain = JSON.stringify({ text: value, title: value })
+    const escaped = plain.replaceAll(/a+/g, (m) => '\\u0061'.repeat(m.length))
+    expect(JSON.parse(escaped)).toEqual(JSON.parse(plain))
+
+    const limit = jsonBodyLimit(maxFieldBytes)
+    for (const body of [plain, escaped]) {
+      const req = new Request('http://example.com/clip', {
+        method: 'POST',
+        body,
+      })
+      await expect(readJsonWithLimit(req, limit)).resolves.toEqual({
+        text: value,
+        title: value,
+      })
+    }
+  })
+
   it('Content-Length が無くても読み取り中に上限を超えたら 413 を投げる', async () => {
     const encoder = new TextEncoder()
     const stream = new ReadableStream<Uint8Array>({

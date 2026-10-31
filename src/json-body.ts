@@ -10,9 +10,16 @@ import { HTTPException } from 'hono/http-exception'
 // precheckLimit, #215 と同じ考え方)。
 const JSON_BODY_FIELD_COUNT = 6
 const JSON_BODY_OVERHEAD_BYTES = 64 * 1024
+// JSON 文字列は \uXXXX エスケープで 1 バイトが最大 6 バイトに膨らむ (ASCII 1 バイト →
+// 6 バイト)。同一内容が表記だけで 413 にならないよう、エスケープ分を含めて見積もる (#337)。
+// 解析後の各フィールドは別途 UTF-8 バイト数で上限を適用する。
+const JSON_ESCAPE_EXPANSION = 6
 
 export function jsonBodyLimit(maxFieldBytes: number): number {
-  return JSON_BODY_FIELD_COUNT * maxFieldBytes + JSON_BODY_OVERHEAD_BYTES
+  return (
+    JSON_BODY_FIELD_COUNT * maxFieldBytes * JSON_ESCAPE_EXPANSION +
+    JSON_BODY_OVERHEAD_BYTES
+  )
 }
 
 function tooLarge(): HTTPException {
