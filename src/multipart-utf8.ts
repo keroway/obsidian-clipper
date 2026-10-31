@@ -27,6 +27,42 @@ function indexOfBytes(
   return -1
 }
 
+// delimiter 候補 (body[idx] から delimLen バイト) の直後が区切り行として成立するか (#335)。
+// 終端なら 'close'、通常の区切りなら 'part'、本文中の偽物 (--abc--not-a-boundary 等) なら null。
+// 後続は (空白/タブの transport padding +) CRLF か入力末尾でなければならない。
+function delimiterKind(
+  body: Uint8Array,
+  idx: number,
+  delimLen: number,
+): 'part' | 'close' | null {
+  let p = idx + delimLen
+  const close = body[p] === 0x2d && body[p + 1] === 0x2d
+  if (close) p += 2
+  while (body[p] === 0x20 || body[p] === 0x09) p++
+  const lineEnd = p >= body.length || (body[p] === 0x0d && body[p + 1] === 0x0a)
+  if (!lineEnd) return null
+  return close ? 'close' : 'part'
+}
+
+// from 以降で行頭 (直前が CRLF、または先頭) にある正当な delimiter を探す。
+function findDelimiter(
+  body: Uint8Array,
+  delim: Uint8Array,
+  from: number,
+): { index: number; kind: 'part' | 'close' } | null {
+  let i = indexOfBytes(body, delim, from)
+  while (i !== -1) {
+    const atLineStart =
+      i === 0 || (body[i - 2] === 0x0d && body[i - 1] === 0x0a)
+    if (atLineStart) {
+      const kind = delimiterKind(body, i, delim.length)
+      if (kind) return { index: i, kind }
+    }
+    i = indexOfBytes(body, delim, i + 1)
+  }
+  return null
+}
+
 // Content-Disposition ヘッダーの実際の filename / filename* パラメータだけをファイル判定の根拠にする (#333)。
 // 他ヘッダーや引用符内の "filename=" では判定しない。
 function hasFilenameParam(headers: string): boolean {
@@ -53,11 +89,11 @@ export function multipartTextPartsAreValidUtf8(
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
   const latin1 = new TextDecoder('latin1')
 
-  let pos = indexOfBytes(body, delim, 0)
-  while (pos !== -1) {
-    const afterDelim = pos + delim.length
+  let cur = findDelimiter(body, delim, 0)
+  while (cur) {
     // 終端 boundary (--boundary--)
-    if (body[afterDelim] === 0x2d && body[afterDelim + 1] === 0x2d) return true
+    if (cur.kind === 'close') return true
+    const afterDelim = cur.index + delim.length
 
     const headStart = indexOfBytes(body, CRLF, afterDelim)
     if (headStart === -1) return true
@@ -66,14 +102,8 @@ export function multipartTextPartsAreValidUtf8(
     const bodyStart = headEnd + HEADER_END.length
 
     // 次の delimiter (直前に CRLF が付く)
-    let next = indexOfBytes(body, delim, bodyStart)
-    while (
-      next !== -1 &&
-      !(body[next - 2] === 0x0d && body[next - 1] === 0x0a)
-    ) {
-      next = indexOfBytes(body, delim, next + 1)
-    }
-    const bodyEnd = next === -1 ? body.length : next - 2
+    const next = findDelimiter(body, delim, bodyStart)
+    const bodyEnd = next ? next.index - 2 : body.length
 
     const headers = latin1.decode(body.subarray(headStart + 2, headEnd))
     if (!hasFilenameParam(headers)) {
@@ -83,7 +113,7 @@ export function multipartTextPartsAreValidUtf8(
         return false
       }
     }
-    pos = next
+    cur = next
   }
   return true
 }

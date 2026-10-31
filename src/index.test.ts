@@ -4344,6 +4344,19 @@ describe('POST /clip - image clip', () => {
       expect(res.status).toBe(400)
     })
 
+    it('title 本文中の偽の終端行 (--local--not-a-boundary) 以降の不正バイトも拒否する (#335)', async () => {
+      const res = await postRaw([
+        ...enc.encode('hello\r\n--local--not-a-boundary\r\n'),
+        0xff,
+      ])
+      expect(res.status).toBe(400)
+    })
+
+    it('title 本文中の偽の区切り行 (--localX) 以降の不正バイトも拒否する (#335)', async () => {
+      const res = await postRaw([...enc.encode('hello\r\n--localX\r\n'), 0xff])
+      expect(res.status).toBe(400)
+    })
+
     it('正常な日本語と正当な U+FFFD の title は受理する', async () => {
       const res = await postRaw([...enc.encode('日本語�ok')])
       expect(res.status).toBe(200)
