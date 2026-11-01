@@ -61,13 +61,28 @@
     },
     body: JSON.stringify(payload),
   })
-    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
-    .then(({ ok, j }) => {
+    .then((r) =>
+      r.text().then((body) => {
+        let j
+        try {
+          j = JSON.parse(body)
+        } catch (_) {
+          // 非 JSON / 空本文: HTTP ステータスと本文先頭をそのまま見せる
+        }
+        return { ok: r.ok, status: r.status, body, j }
+      }),
+    )
+    .then(({ ok, status, body, j }) => {
       if (j && j.duplicate) {
         toast('Already saved: ' + (j.path || ''), false)
         return
       }
-      toast(ok ? 'Saved: ' + (j.path || '') : 'Error: ' + JSON.stringify(j), ok)
+      if (ok && j) {
+        toast('Saved: ' + (j.path || ''), true)
+        return
+      }
+      const detail = j ? JSON.stringify(j) : body.slice(0, 200)
+      toast('Error ' + status + (detail ? ': ' + detail : ''), false)
     })
     .catch((e) => toast('Network error: ' + e.message, false))
 })()
