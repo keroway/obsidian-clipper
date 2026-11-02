@@ -4,9 +4,21 @@
  * 上限超過は null で返す (throw すると呼び出し側のリトライ/フォールバック経路に
  * 乗ってしまうため、呼び出し側が意味を決める)。
  */
+export class InvalidUtf8Error extends Error {
+  constructor() {
+    super('invalid UTF-8 in body')
+    this.name = 'InvalidUtf8Error'
+  }
+}
+
+/**
+ * `strictUtf8: true` のときは不正 UTF-8 を U+FFFD に置換せず InvalidUtf8Error を
+ * throw する (#345)。既定は従来どおり置換。
+ */
 export async function readTextWithLimit(
   res: Response,
   maxBytes: number,
+  options: { strictUtf8?: boolean } = {},
 ): Promise<string | null> {
   const declared = Number(res.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > maxBytes) {
@@ -16,18 +28,29 @@ export async function readTextWithLimit(
   }
   if (!res.body) return ''
   const reader = res.body.getReader()
-  const decoder = new TextDecoder()
+  const decoder = new TextDecoder('utf-8', {
+    fatal: options.strictUtf8 === true,
+    ignoreBOM: false,
+  })
   let received = 0
   let text = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    received += value.byteLength
-    if (received > maxBytes) {
-      void reader.cancel().catch(() => {})
-      return null
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      received += value.byteLength
+      if (received > maxBytes) {
+        void reader.cancel().catch(() => {})
+        return null
+      }
+      text += decoder.decode(value, { stream: true })
     }
-    text += decoder.decode(value, { stream: true })
+    return text + decoder.decode()
+  } catch (e) {
+    if (e instanceof TypeError && options.strictUtf8) {
+      void reader.cancel().catch(() => {})
+      throw new InvalidUtf8Error()
+    }
+    throw e
   }
-  return text + decoder.decode()
 }
