@@ -77,8 +77,8 @@
         toast('Already saved: ' + (j.path || ''), false)
         return
       }
-      if (ok && j) {
-        toast('Saved: ' + (j.path || ''), true)
+      if (ok && j && j.ok === true && typeof j.path === 'string' && j.path) {
+        toast('Saved: ' + j.path, true)
         return
       }
       const detail = j ? JSON.stringify(j) : body.slice(0, 200)
