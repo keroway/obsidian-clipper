@@ -1661,6 +1661,50 @@ describe('fetchArticle', () => {
     expect(r.err).toContain('empty')
   })
 
+  it('treats jina 200 with invalid UTF-8 as a failure without retry or fallback (#345)', async () => {
+    let jinaCalls = 0
+    let brCalled = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        jinaCalls++
+        return new Response(new Uint8Array([65, 255, 66]), { status: 200 })
+      }
+      if (u.includes('/browser-rendering/markdown')) brCalled = true
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/bad-utf8', brEnv)
+    expect(jinaCalls).toBe(1)
+    expect(brCalled).toBe(false)
+    expect(r.md).toBe('')
+    expect(r.via).toBeUndefined()
+    expect(r.err).toContain('invalid UTF-8')
+  })
+
+  it('accepts valid Japanese, a legitimate U+FFFD, and UTF-8 split across chunks (#345)', async () => {
+    const enc = new TextEncoder()
+    const text = '日本語の本文�'
+    const bytes = enc.encode(text)
+    // 3 バイト文字の途中 (2 バイト目) でチャンクを分割する
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, 1))
+        controller.enqueue(bytes.slice(1, 5))
+        controller.enqueue(bytes.slice(5))
+        controller.close()
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(stream, { status: 200 }),
+    )
+
+    const r = await fetchArticle('https://example.com/ja', jinaOnlyEnv)
+    expect(r.err).toBeUndefined()
+    expect(r.md).toBe(text)
+    expect(r.via).toBe('jina')
+  })
+
   it('does not fall back to browser-rendering on jina empty body (not a retryable status)', async () => {
     let brCalled = false
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {

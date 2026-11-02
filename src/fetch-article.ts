@@ -1,5 +1,5 @@
 import type { Bindings } from './bindings'
-import { readTextWithLimit } from './bounded-body'
+import { InvalidUtf8Error, readTextWithLimit } from './bounded-body'
 import { readErrorSnippet } from './error-body'
 import { DEFAULT_MAX_TEXT_CLIP_BYTES } from './text-clip'
 import { hostname } from './url'
@@ -64,7 +64,17 @@ export async function fetchArticle(
       )
       try {
         if (res.ok) {
-          const md = await readTextWithLimit(res, maxBytes)
+          let md: string | null
+          try {
+            md = await readTextWithLimit(res, maxBytes, { strictUtf8: true })
+          } catch (e) {
+            if (!(e instanceof InvalidUtf8Error)) throw e
+            // 不正 UTF-8 は文字化け本文を成功扱いにしない (#345)。同じ本文が
+            // 再取得でも返るため、リトライもフォールバックもしない。
+            lastErr = 'jina invalid UTF-8 body'
+            retryableFailure = false
+            break
+          }
           if (md === null) {
             lastErr = bodyTooLargeMessage(maxBytes)
             retryableFailure = false
