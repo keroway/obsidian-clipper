@@ -237,7 +237,10 @@ async function anthropicComplete(
       const text = await readErrorSnippet(res)
       throw new Error(`anthropic ${res.status}${text ? `: ${text}` : ''}`)
     }
-    const raw = await readTextWithLimit(res, ANTHROPIC_RESPONSE_MAX_BYTES)
+    // 不正 UTF-8 は U+FFFD 置換で成功扱いにせず throw し、フォールバック経路へ渡す (#349)
+    const raw = await readTextWithLimit(res, ANTHROPIC_RESPONSE_MAX_BYTES, {
+      strictUtf8: true,
+    })
     if (raw === null) {
       throw new Error(
         `anthropic response too large (> ${ANTHROPIC_RESPONSE_MAX_BYTES} bytes)`,

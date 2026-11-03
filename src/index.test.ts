@@ -2008,6 +2008,63 @@ describe('summarizeWithProvider', () => {
     expect(run).toHaveBeenCalledTimes(1)
   })
 
+  // #349: Anthropic 成功応答の不正 UTF-8 は U+FFFD 置換で成功扱いにせず、
+  // 失敗として workers-ai へフォールバックする。要約・タグの両方を確認する。
+  it('falls back to workers-ai when anthropic returns invalid UTF-8 (summary and tags)', async () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ content: [{ type: 'text', text: 'alphaXbeta' }] }),
+    )
+    bytes[bytes.indexOf(88)] = 255
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(bytes, { status: 200 }),
+    )
+
+    const { env, run } = workersAiEnv('fallbackTag')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+
+    const summary = await summarizeWithProvider(testEnv, 'body text', 'Title')
+    expect(summary).toBe('fallbackTag')
+    expect(summary).not.toContain('�')
+    expect(run).toHaveBeenCalledTimes(1)
+
+    const tags = await generateTags(testEnv, 'body text', 'Title')
+    expect(tags).toEqual(['fallbackTag'])
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts a legitimate U+FFFD and chunk-split multibyte text from anthropic', async () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ content: [{ type: 'text', text: '日本語�要約' }] }),
+    )
+    // マルチバイト文字の途中で分割した 2 チャンクのストリーム
+    const mid = bytes.indexOf(0xe6) + 1
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, mid))
+        controller.enqueue(bytes.slice(mid))
+        controller.close()
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(stream, { status: 200 }),
+    )
+
+    const { env, run } = workersAiEnv('should not be used')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const summary = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(summary).toBe('日本語�要約')
+    expect(run).not.toHaveBeenCalled()
+  })
+
   it('throws when anthropic returns empty and the workers-ai fallback is also empty', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       return new Response(JSON.stringify({ content: [] }), { status: 200 })
