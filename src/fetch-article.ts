@@ -229,6 +229,9 @@ async function fetchViaBrowserRendering(
     const raw = await readTextWithLimit(
       res,
       maxBytes * JSON_ESCAPE_FACTOR + JSON_ENVELOPE_BYTES,
+      // 不正 UTF-8 は U+FFFD 置換の文字化け本文を成功扱いにしない (#347)。
+      // InvalidUtf8Error は呼び出し元の catch で取得失敗経路に接続される。
+      { strictUtf8: true },
     )
     if (raw === null) return null
     const data = JSON.parse(raw) as {

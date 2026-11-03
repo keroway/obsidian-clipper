@@ -1629,6 +1629,32 @@ describe('fetchArticle', () => {
     expect(r.err).toContain('browser-rendering success=false: render failed')
   })
 
+  it('treats browser-rendering 200 with invalid UTF-8 as a failure (#347)', async () => {
+    const enc = new TextEncoder()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response('rate', { status: 429 })
+      }
+      if (u.includes('/browser-rendering/markdown')) {
+        return new Response(
+          new Uint8Array([
+            ...enc.encode('{"success":true,"result":"before'),
+            0xff,
+            ...enc.encode('after"}'),
+          ]),
+          { status: 200 },
+        )
+      }
+      return new Response('nope', { status: 404 })
+    })
+
+    const r = await fetchArticle('https://example.com/br-bad-utf8', brEnv)
+    expect(r.md).toBe('')
+    expect(r.via).toBeUndefined()
+    expect(r.err).toContain('browser-rendering invalid UTF-8')
+  })
+
   it('treats jina 200 with empty body as a failure, not success (#149)', async () => {
     let calls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
