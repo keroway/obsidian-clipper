@@ -28,6 +28,17 @@ function assertSummaryLength(provider: string, text: string): void {
   }
 }
 
+// 孤立サロゲートを含む文字列は UTF-8 化で U+FFFD に変質するため失敗扱いにする (#356)。
+// 正常なサロゲートペア (絵文字等) と明示的な U+FFFD は通す。
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+function assertWellFormed(provider: string, text: string): void {
+  if (LONE_SURROGATE_RE.test(text)) {
+    throw new Error(`${provider} response contains lone surrogate`)
+  }
+}
+
 // Workers AI の ai.run は AbortSignal を受け取れないため、待機だけを打ち切る。
 // 期限超過は reject として呼び出し側の既存失敗処理 (空要約・空タグで保存継続) に渡す。
 // 処理自体はキャンセルされず、遅れて完了した結果は破棄される。
@@ -123,6 +134,7 @@ async function summarize(
       `workers-ai returned non-string response: ${typeof response}`,
     )
   }
+  assertWellFormed('workers-ai', response)
   return response.trim()
 }
 
@@ -252,6 +264,8 @@ async function anthropicComplete(
       content?: Array<{ type: string; text?: string }>
     }
     const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
+    // JSON の \uD800 エスケープは生バイトとしては正常 UTF-8 なので strictUtf8 では弾けない (#356)
+    assertWellFormed('anthropic', text)
     return text.trim()
   } finally {
     clearTimeout(timer)
