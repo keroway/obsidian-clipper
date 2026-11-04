@@ -2070,6 +2070,39 @@ describe('summarizeWithProvider', () => {
     expect(run).toHaveBeenCalledTimes(2)
   })
 
+  // #355: 非2xx のエラー本文 (上流の自由文) を警告ログへ複製しない。
+  it('does not log the anthropic error body when falling back (summary and tags)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(
+          'upstream rejected PRIVATE_ARTICLE_TEXT token=PRIVATE_TOKEN',
+          {
+            status: 400,
+          },
+        ),
+    )
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { env } = workersAiEnv('fallbackTag')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+
+    expect(await summarizeWithProvider(testEnv, 'body text', 'Title')).toBe(
+      'fallbackTag',
+    )
+    expect(await generateTags(testEnv, 'body text', 'Title')).toEqual([
+      'fallbackTag',
+    ])
+
+    const logged = JSON.stringify(warn.mock.calls)
+    expect(logged).toContain('anthropic 400')
+    expect(logged).not.toContain('PRIVATE_ARTICLE_TEXT')
+    expect(logged).not.toContain('PRIVATE_TOKEN')
+  })
+
   it('accepts a legitimate U+FFFD and chunk-split multibyte text from anthropic', async () => {
     const bytes = new TextEncoder().encode(
       JSON.stringify({ content: [{ type: 'text', text: '日本語�要約' }] }),
