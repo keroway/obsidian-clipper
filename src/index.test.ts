@@ -2070,6 +2070,59 @@ describe('summarizeWithProvider', () => {
     expect(run).toHaveBeenCalledTimes(2)
   })
 
+  // #356: JSON エスケープ由来の孤立サロゲートは生バイトが正常 UTF-8 でも失敗扱いにし、
+  // workers-ai へフォールバックする。正常なペアと明示的な U+FFFD は通す。
+  it.each(['\uD800', '\uDC00'])(
+    'falls back to workers-ai when anthropic returns a lone surrogate (summary and tags)',
+    async (lone) => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              content: [{ type: 'text', text: `broken${lone}summary` }],
+            }),
+            { status: 200 },
+          ),
+      )
+      const { env, run } = workersAiEnv('fallbackTag')
+      const testEnv = {
+        ...env,
+        SUMMARY_PROVIDER: 'anthropic',
+        ANTHROPIC_API_KEY: 'sk-test',
+      } as Bindings
+
+      expect(await summarizeWithProvider(testEnv, 'body', 'Title')).toBe(
+        'fallbackTag',
+      )
+      expect(await generateTags(testEnv, 'body', 'Title')).toEqual([
+        'fallbackTag',
+      ])
+      expect(run).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it('keeps valid surrogate pairs and explicit U+FFFD in anthropic summaries (#356)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            content: [{ type: 'text', text: 'ok 😀 � end' }],
+          }),
+          { status: 200 },
+        ),
+    )
+    const { env, run } = workersAiEnv('unused')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    expect(await summarizeWithProvider(testEnv, 'body', 'Title')).toBe(
+      'ok 😀 � end',
+    )
+    expect(run).not.toHaveBeenCalled()
+  })
+
   // #355: 非2xx のエラー本文 (上流の自由文) を警告ログへ複製しない。
   it('does not log the anthropic error body when falling back (summary and tags)', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(
