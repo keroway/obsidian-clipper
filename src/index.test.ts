@@ -1655,6 +1655,37 @@ describe('fetchArticle', () => {
     expect(r.err).toContain('browser-rendering invalid UTF-8')
   })
 
+  it('treats browser-rendering result with a lone surrogate as a failure but keeps valid emoji and U+FFFD (#360)', async () => {
+    const respond = (result: string) =>
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const u = input.toString()
+        if (u.startsWith('https://r.jina.ai/')) {
+          return new Response('rate', {
+            status: 429,
+            headers: { 'retry-after': '0' },
+          })
+        }
+        if (u.includes('/browser-rendering/markdown')) {
+          return Response.json({ success: true, result })
+        }
+        return new Response('nope', { status: 404 })
+      })
+
+    for (const lone of [0xd800, 0xdbff, 0xdc00, 0xdfff]) {
+      respond(`before${String.fromCharCode(lone)}after`)
+      const r = await fetchArticle('https://example.com/br-lone', brEnv)
+      expect(r.md).toBe('')
+      expect(r.via).toBeUndefined()
+      expect(r.err).toContain('browser-rendering')
+      expect(r.err).toContain('lone surrogate')
+    }
+
+    respond('ok 😀 � end')
+    const ok = await fetchArticle('https://example.com/br-emoji', brEnv)
+    expect(ok.via).toBe('browser-rendering')
+    expect(ok.md).toBe('ok 😀 � end')
+  })
+
   it('treats jina 200 with empty body as a failure, not success (#149)', async () => {
     let calls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
