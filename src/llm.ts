@@ -1,6 +1,5 @@
 import type { Bindings } from './bindings'
 import { readTextWithLimit } from './bounded-body'
-import { readErrorSnippet } from './error-body'
 import {
   AUTO_TAG_SYSTEM_PROMPT,
   buildSummaryUserPrompt,
@@ -234,8 +233,11 @@ async function anthropicComplete(
       signal: controller.signal,
     })
     if (!res.ok) {
-      const text = await readErrorSnippet(res)
-      throw new Error(`anthropic ${res.status}${text ? `: ${text}` : ''}`)
+      // 上流のエラー本文は例外メッセージに含めない (#355)。メッセージは console.warn と
+      // webhook 通知にそのまま渡るため、自由文を載せると ADR 0012 の方針に反して複製される。
+      // 本文は読み捨てて接続を解放し、ステータスだけを残す。
+      await res.body?.cancel().catch(() => {})
+      throw new Error(`anthropic ${res.status}`)
     }
     // 不正 UTF-8 は U+FFFD 置換で成功扱いにせず throw し、フォールバック経路へ渡す (#349)
     const raw = await readTextWithLimit(res, ANTHROPIC_RESPONSE_MAX_BYTES, {
