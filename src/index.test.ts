@@ -1096,6 +1096,80 @@ describe('readUrlIndex', () => {
   })
 })
 
+describe('url-index 警告ログに Vault パス・例外メッセージを載せない（#359）', () => {
+  const KEY = 'PrivateVault/Inbox/.index/urls.json'
+  const SENTINEL = 'R2_PRIVATE_SENTINEL'
+
+  function warned(spy: ReturnType<typeof vi.spyOn>): string {
+    return JSON.stringify(spy.mock.calls)
+  }
+
+  it('readUrlIndex: JSON パース失敗', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const vault = {
+      get: async () => ({
+        etag: 'x',
+        json: async () => {
+          throw new SyntaxError(SENTINEL)
+        },
+      }),
+    } as unknown as R2Bucket
+    await readUrlIndex(vault, KEY)
+    expect(warnSpy).toHaveBeenCalled()
+    expect(warned(warnSpy)).not.toContain('PrivateVault')
+    expect(warned(warnSpy)).not.toContain(SENTINEL)
+    warnSpy.mockRestore()
+  })
+
+  it('readUrlIndex: スキーマ外', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const vault = {
+      get: async () => ({ etag: 'x', json: async () => [] }),
+    } as unknown as R2Bucket
+    await readUrlIndex(vault, KEY)
+    expect(warnSpy).toHaveBeenCalled()
+    expect(warned(warnSpy)).not.toContain('PrivateVault')
+    warnSpy.mockRestore()
+  })
+
+  it('writeUrlIndexCAS: 破損スキップ・ストレージ例外', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const corruptVault = {
+      get: async () => ({ etag: 'x', json: async () => [] }),
+    } as unknown as R2Bucket
+    await writeUrlIndexCAS(corruptVault, KEY, () => {})
+    const throwingVault = {
+      get: async () => {
+        throw new Error(SENTINEL)
+      },
+    } as unknown as R2Bucket
+    await writeUrlIndexCAS(throwingVault, KEY, () => {})
+    expect(warnSpy.mock.calls.length).toBeGreaterThanOrEqual(3)
+    expect(warned(warnSpy)).not.toContain('PrivateVault')
+    expect(warned(warnSpy)).not.toContain(SENTINEL)
+    warnSpy.mockRestore()
+  })
+
+  it('writeUrlIndexCAS: 最終フォールバック時の破損スキップ', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let gets = 0
+    const vault = {
+      get: async () => {
+        gets++
+        // 1-2 回目は正常 (競合させる)、3 回目で破損
+        return gets <= 2
+          ? { etag: 'x', json: async () => ({}) }
+          : { etag: 'x', json: async () => [] }
+      },
+      put: async () => null,
+    } as unknown as R2Bucket
+    const { reason } = await writeUrlIndexCAS(vault, KEY, () => {})
+    expect(reason).toBe('corrupted')
+    expect(warned(warnSpy)).not.toContain('PrivateVault')
+    warnSpy.mockRestore()
+  })
+})
+
 describe('readErrorSnippet（#225）', () => {
   it('通常サイズの本文はそのまま返す', async () => {
     expect(await readErrorSnippet(new Response('bad request'))).toBe(

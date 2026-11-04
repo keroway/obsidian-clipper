@@ -28,6 +28,15 @@ export async function sha1Hex(text: string): Promise<string> {
   return sha1HexBytes(new TextEncoder().encode(text))
 }
 
+// 警告ログに載せてよい例外情報は種別 (name) だけ。message / key (Vault パス) は
+// ADR 0012 の方針で記録しない (#359)。name が文字列でなければ 'unknown'。
+function safeErrorName(err: unknown): string {
+  const name = err instanceof Error ? err.name : undefined
+  return typeof name === 'string' && /^[A-Za-z]{1,40}$/.test(name)
+    ? name
+    : 'unknown'
+}
+
 type ReadResult = { index: UrlIndex; etag?: string; corrupted?: boolean }
 
 // JSON としては valid でも UrlIndex のスキーマ (非配列 object, 各 entry が
@@ -60,11 +69,13 @@ export async function readUrlIndex(
   try {
     parsed = await obj.json()
   } catch (err) {
-    console.warn(`readUrlIndex: failed to parse "${key}" as JSON`, err)
+    console.warn(
+      `readUrlIndex: failed to parse index as JSON (${safeErrorName(err)})`,
+    )
     return { index: {}, etag: obj.etag, corrupted: true }
   }
   if (!isValidUrlIndex(parsed)) {
-    console.warn(`readUrlIndex: "${key}" is valid JSON but not a UrlIndex`)
+    console.warn('readUrlIndex: index is valid JSON but not a UrlIndex')
     return { index: {}, etag: obj.etag, corrupted: true }
   }
   return { index: parsed, etag: obj.etag }
@@ -115,7 +126,7 @@ export async function writeUrlIndexCAS(
       const { index, etag, corrupted } = await readUrlIndex(vault, key)
       if (corrupted) {
         console.warn(
-          `writeUrlIndexCAS: skipping write to "${key}" because the existing index failed to parse`,
+          'writeUrlIndexCAS: skipping write because the existing index failed to parse',
         )
         return { written: false, reason: 'corrupted' }
       }
@@ -132,7 +143,7 @@ export async function writeUrlIndexCAS(
     const { index, corrupted } = await readUrlIndex(vault, key)
     if (corrupted) {
       console.warn(
-        `writeUrlIndexCAS: skipping fallback write to "${key}" because the existing index failed to parse`,
+        'writeUrlIndexCAS: skipping fallback write because the existing index failed to parse',
       )
       return { written: false, reason: 'corrupted' }
     }
@@ -142,7 +153,9 @@ export async function writeUrlIndexCAS(
     })
     return { written: true }
   } catch (err) {
-    console.warn(`writeUrlIndexCAS: vault.get/put failed for "${key}"`, err)
+    console.warn(
+      `writeUrlIndexCAS: vault.get/put failed (${safeErrorName(err)})`,
+    )
     return { written: false, reason: 'storage-error' }
   }
 }
