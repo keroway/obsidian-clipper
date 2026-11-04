@@ -1832,6 +1832,40 @@ describe('fetchArticle', () => {
   // 本文読み取りは JINA_TIMEOUT_MS (20s) を過ぎても abort されず fetchArticle が
   // 完了しない。fake timers で 20s 分の経過をシミュレートし、abort によって
   // res.text() が reject され、最終的に fetchArticle が失敗として解決することを確認する。
+  it('does not leak URL path/query from fetch exception messages into logs or err (#353)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error(
+        'request failed for https://example.com/private?token=LOCAL_SENTINEL',
+      )
+    })
+    const logs: string[] = []
+    vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      logs.push(a.join(' '))
+    })
+
+    vi.useFakeTimers()
+    try {
+      const promise = fetchArticle(
+        'https://example.com/private?token=LOCAL_SENTINEL',
+        brEnv,
+      )
+      await vi.advanceTimersByTimeAsync(120_000)
+      const r = await promise
+
+      expect(r.md).toBe('')
+      expect(r.err).toBeTruthy()
+      expect(r.err).not.toContain('LOCAL_SENTINEL')
+      expect(r.err).not.toContain('/private')
+      expect(logs.length).toBeGreaterThan(0)
+      for (const l of logs) {
+        expect(l).not.toContain('LOCAL_SENTINEL')
+        expect(l).not.toContain('/private')
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('aborts a stalled response body read once the per-attempt timeout elapses', async () => {
     vi.useFakeTimers()
     try {

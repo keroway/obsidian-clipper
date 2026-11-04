@@ -28,6 +28,21 @@ function extractJinaTitle(md: string): string | undefined {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+/**
+ * 例外 message をログ・err へ載せる前に URL のパス・クエリ・フラグメントを落とす (#353)。
+ * fetch 例外の message には要求 URL が含まれうるため、URL は origin のみに畳む。
+ */
+export function describeFetchError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  return msg.replace(/https?:\/\/[^\s"'<>)\]]+/gi, (m) => {
+    try {
+      return new URL(m).origin
+    } catch {
+      return '<url>'
+    }
+  })
+}
+
 const bodyTooLargeMessage = (maxBytes: number) =>
   `article body too large (> ${maxBytes} bytes)`
 
@@ -114,7 +129,7 @@ export async function fetchArticle(
         clear()
       }
     } catch (e) {
-      lastErr = `jina ${(e as Error).message}`
+      lastErr = `jina ${describeFetchError(e)}`
       retryableFailure = true
       if (attempt < JINA_MAX_RETRIES) {
         await sleep(retryDelayMs(null, attempt))
@@ -149,9 +164,10 @@ export async function fetchArticle(
         console.log(`fetch fallback: browser-rendering empty for ${host}`)
       }
     } catch (e) {
-      lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${(e as Error).message}`
+      const detail = describeFetchError(e)
+      lastErr = `${lastErr ?? 'jina failed'}; browser-rendering ${detail}`
       console.log(
-        `fetch fallback: browser-rendering failed for ${host} (${(e as Error).message})`,
+        `fetch fallback: browser-rendering failed for ${host} (${detail})`,
       )
     }
   }
