@@ -215,6 +215,9 @@ function describeErrors(errors: unknown): string {
   return msgs.length ? `: ${msgs.join('; ').slice(0, 200)}` : ''
 }
 
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 async function fetchViaBrowserRendering(
   url: string,
   env: Bindings,
@@ -265,6 +268,11 @@ async function fetchViaBrowserRendering(
         : typeof data.result?.markdown === 'string'
           ? data.result.markdown
           : ''
+    // JSON の \uD800 エスケープは生バイトとしては正常 UTF-8 なので strictUtf8 では
+    // 弾けない。孤立サロゲートは UTF-8 化で U+FFFD に変質するため失敗扱いにする (#360)。
+    if (LONE_SURROGATE_RE.test(md)) {
+      throw new Error('browser-rendering result contains lone surrogate')
+    }
     if (new TextEncoder().encode(md).byteLength > maxBytes) return null
     return md.trim()
   } finally {
