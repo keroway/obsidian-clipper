@@ -4824,6 +4824,9 @@ describe('POST /clip - image clip', () => {
       expect(json.notePath).toBeUndefined()
       expect(await env.VAULT.head(json.path)).not.toBeNull()
       expect(warnSpy).toHaveBeenCalled()
+      const warned = JSON.stringify(warnSpy.mock.calls)
+      expect(warned).not.toContain('note-put-fail-255')
+      expect(warned).not.toContain(json.path)
       const events = logSpy.mock.calls
         .map((args) => args[0])
         .filter(
@@ -4881,6 +4884,9 @@ describe('POST /clip - image clip', () => {
       expect(json.noteFailed).toBe(true)
       expect(json.notePath).toBeUndefined()
       expect(warnSpy).toHaveBeenCalled()
+      const warned = JSON.stringify(warnSpy.mock.calls)
+      expect(warned).not.toContain('dup-note-put-fail-257')
+      expect(warned).not.toContain(json.path)
       const events = logSpy.mock.calls
         .map((args) => args[0])
         .filter(

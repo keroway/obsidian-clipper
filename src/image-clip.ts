@@ -207,9 +207,10 @@ export async function saveImageClip(
             tags,
           }
         } catch (e) {
+          // パス・例外メッセージは元画像名を含みうるため出さない (ADR 0012, #351)
           console.warn(
-            `clip: 画像は保存済みだが埋め込みノートの保存に失敗しました: ${existingPath}`,
-            e,
+            'clip: 画像は保存済みだが埋め込みノートの保存に失敗しました (duplicate)',
+            e instanceof Error ? e.name : typeof e,
           )
           if (env.NOTIFY_WEBHOOK_URL) {
             waitUntil(
@@ -266,9 +267,10 @@ export async function saveImageClip(
       embedNote = await buildEmbedNote(now, `${attachmentsFolder}/${filename}`)
     } catch (e) {
       noteFailed = true
+      // パス・例外メッセージは元画像名を含みうるため出さない (ADR 0012, #351)
       console.warn(
-        `clip: 画像は保存済みだが埋め込みノートの保存に失敗しました: ${key}`,
-        e,
+        'clip: 画像は保存済みだが埋め込みノートの保存に失敗しました (new)',
+        e instanceof Error ? e.name : typeof e,
       )
       if (env.NOTIFY_WEBHOOK_URL) {
         waitUntil(
