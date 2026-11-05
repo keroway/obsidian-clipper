@@ -51,7 +51,7 @@ import {
   readBodyWithLimit,
   readJsonWithLimit,
 } from './json-body'
-import { generateTags, summarizeWithProvider } from './llm'
+import { describeLlmError, generateTags, summarizeWithProvider } from './llm'
 import { multipartTextPartsAreValidUtf8 } from './multipart-utf8'
 import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
@@ -306,13 +306,13 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   const [summary, llmTags] = await Promise.all([
     wantSummary
       ? summarizeWithProvider(c.env, articleMd, articleTitle).catch((e) => {
-          console.warn('summarize failed', (e as Error).message)
+          console.warn('summarize failed', describeLlmError(e))
           details.summaryFailed = true
           if (c.env.NOTIFY_WEBHOOK_URL) {
             c.executionCtx.waitUntil(
               notifyWebhook(
                 c.env.NOTIFY_WEBHOOK_URL,
-                `[obsidian-clipper] 要約失敗: ${hostname(url)} (${(e as Error).message})`,
+                `[obsidian-clipper] 要約失敗: ${hostname(url)} (${describeLlmError(e)})`,
               ),
             )
           }
@@ -321,7 +321,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
       : Promise.resolve(''),
     wantTags
       ? generateTags(c.env, articleMd, articleTitle).catch((e) => {
-          console.warn('auto-tag failed', (e as Error).message)
+          console.warn('auto-tag failed', describeLlmError(e))
           details.tagsFailed = true
           // 要約・本文取得と同じく webhook へも通知する。ここだけ
           // console.warn 止まりだと、LLM 障害でタグが付かなくなっても
@@ -332,7 +332,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
             c.executionCtx.waitUntil(
               notifyWebhook(
                 c.env.NOTIFY_WEBHOOK_URL,
-                `[obsidian-clipper] タグ生成失敗: ${hostname(url)} (${(e as Error).message})`,
+                `[obsidian-clipper] タグ生成失敗: ${hostname(url)} (${describeLlmError(e)})`,
               ),
             )
           }

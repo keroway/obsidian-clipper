@@ -20,9 +20,30 @@ const ANTHROPIC_RESPONSE_MAX_BYTES = 64 * 1024
 
 export { SUMMARY_MAX_CHARS }
 
+// 本モジュールが自前で組み立てた固定文言の失敗 (#367)。message に外部由来の自由文を
+// 含めないので、そのままログ・Webhook に載せてよい。それ以外の例外 (fetch / JSON.parse /
+// Workers AI バインディング由来) の message は本文・URL・認証値を含みうるため転記しない。
+export class LlmFailure extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'LlmFailure'
+  }
+}
+
+// ログ・通知に出してよい失敗の分類文字列を返す。任意の例外 message は返さない。
+export function describeLlmError(e: unknown): string {
+  if (e instanceof LlmFailure) return e.message
+  const name = e instanceof Error ? e.name : ''
+  if (name === 'AbortError' || name === 'TimeoutError') return 'timeout'
+  if (name === 'InvalidUtf8Error') return 'invalid utf-8 response'
+  if (name === 'SyntaxError') return 'invalid json response'
+  if (name === 'TypeError') return 'network or type error'
+  return 'unexpected error'
+}
+
 function assertSummaryLength(provider: string, text: string): void {
   if (text.length > SUMMARY_MAX_CHARS) {
-    throw new Error(
+    throw new LlmFailure(
       `${provider} summary too long (${text.length} > ${SUMMARY_MAX_CHARS} chars)`,
     )
   }
@@ -35,7 +56,7 @@ const LONE_SURROGATE_RE =
 
 function assertWellFormed(provider: string, text: string): void {
   if (LONE_SURROGATE_RE.test(text)) {
-    throw new Error(`${provider} response contains lone surrogate`)
+    throw new LlmFailure(`${provider} response contains lone surrogate`)
   }
 }
 
@@ -51,7 +72,7 @@ async function withWorkersAiTimeout<T>(
     timer = setTimeout(
       () =>
         reject(
-          new Error(
+          new LlmFailure(
             `workers-ai ${label} timed out after ${WORKERS_AI_TIMEOUT_MS}ms`,
           ),
         ),
@@ -87,23 +108,23 @@ export async function summarizeWithProvider(
         md,
         title,
       )
-      if (!text) throw new Error('anthropic returned empty summary')
+      if (!text) throw new LlmFailure('anthropic returned empty summary')
       assertSummaryLength('anthropic', text)
       return text
     } catch (e) {
       // Anthropic 失敗時は 1 回だけ workers-ai にフォールバック (ループは作らない)
       console.warn(
         'anthropic summarize failed, falling back to workers-ai',
-        (e as Error).message,
+        describeLlmError(e),
       )
       const fallback = await summarize(env.AI, workersAiModel, md, title)
-      if (!fallback) throw new Error('workers-ai returned empty summary')
+      if (!fallback) throw new LlmFailure('workers-ai returned empty summary')
       assertSummaryLength('workers-ai', fallback)
       return fallback
     }
   }
   const result = await summarize(env.AI, workersAiModel, md, title)
-  if (!result) throw new Error('workers-ai returned empty summary')
+  if (!result) throw new LlmFailure('workers-ai returned empty summary')
   assertSummaryLength('workers-ai', result)
   return result
 }
@@ -130,7 +151,7 @@ async function summarize(
   const response = r?.response
   if (response === undefined || response === null) return ''
   if (typeof response !== 'string') {
-    throw new Error(
+    throw new LlmFailure(
       `workers-ai returned non-string response: ${typeof response}`,
     )
   }
@@ -177,14 +198,14 @@ export async function generateTags(
       )
       const tags = parseTagList(text)
       if (!hasValidTag(tags))
-        throw new Error('anthropic returned no usable tags')
+        throw new LlmFailure('anthropic returned no usable tags')
       return tags
     } catch (e) {
       // 要約と同じく Anthropic 失敗時は 1 回だけ workers-ai にフォールバックする
       // (空応答・正規化後に有効タグが残らない場合も失敗として扱う)。
       console.warn(
         'anthropic auto-tag failed, falling back to workers-ai',
-        (e as Error).message,
+        describeLlmError(e),
       )
     }
   }
@@ -208,12 +229,13 @@ export async function generateTags(
     response !== null &&
     typeof response !== 'string'
   ) {
-    throw new Error(
+    throw new LlmFailure(
       `workers-ai returned non-string response: ${typeof response}`,
     )
   }
   const tags = parseTagList((response ?? '').toString())
-  if (!hasValidTag(tags)) throw new Error('workers-ai returned no usable tags')
+  if (!hasValidTag(tags))
+    throw new LlmFailure('workers-ai returned no usable tags')
   return tags
 }
 
@@ -249,14 +271,14 @@ async function anthropicComplete(
       // webhook 通知にそのまま渡るため、自由文を載せると ADR 0012 の方針に反して複製される。
       // 本文は読み捨てて接続を解放し、ステータスだけを残す。
       await res.body?.cancel().catch(() => {})
-      throw new Error(`anthropic ${res.status}`)
+      throw new LlmFailure(`anthropic ${res.status}`)
     }
     // 不正 UTF-8 は U+FFFD 置換で成功扱いにせず throw し、フォールバック経路へ渡す (#349)
     const raw = await readTextWithLimit(res, ANTHROPIC_RESPONSE_MAX_BYTES, {
       strictUtf8: true,
     })
     if (raw === null) {
-      throw new Error(
+      throw new LlmFailure(
         `anthropic response too large (> ${ANTHROPIC_RESPONSE_MAX_BYTES} bytes)`,
       )
     }
