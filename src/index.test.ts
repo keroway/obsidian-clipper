@@ -3975,6 +3975,84 @@ describe('POST /clip - auto tagging', () => {
     }
   })
 
+  /// #367: LLM 例外の生 message (本文・URL クエリ・認証値を含みうる) を
+  /// 警告ログと Webhook に転記しない。Workers AI reject と Anthropic fetch 例外の両経路。
+  it('does not leak raw LLM exception messages to logs or webhook', async () => {
+    const testEnv = env as typeof env & {
+      NOTIFY_WEBHOOK_URL?: string
+      ENABLE_SUMMARY?: string
+      ENABLE_AUTO_TAGS?: string
+      SUMMARY_PROVIDER?: string
+      ANTHROPIC_API_KEY?: string
+    }
+    const saved = {
+      notify: testEnv.NOTIFY_WEBHOOK_URL,
+      summary: testEnv.ENABLE_SUMMARY,
+      tags: testEnv.ENABLE_AUTO_TAGS,
+      provider: testEnv.SUMMARY_PROVIDER,
+      key: testEnv.ANTHROPIC_API_KEY,
+      ai: testEnv.AI,
+    }
+    const SECRET = 'LEAK-SECRET-9f3a?token=abc123'
+    testEnv.AI = {
+      run: async () => {
+        throw new Error(`workers-ai boom ${SECRET}`)
+      },
+    } as unknown as typeof testEnv.AI
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response(`Title: T\n\n${'article body text '.repeat(20)}`, {
+          status: 200,
+        })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      if (u.startsWith('https://api.anthropic.com/')) {
+        throw new TypeError(`fetch failed ${SECRET}`)
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    testEnv.ENABLE_SUMMARY = 'true'
+    testEnv.ENABLE_AUTO_TAGS = 'true'
+    testEnv.SUMMARY_PROVIDER = 'anthropic'
+    testEnv.ANTHROPIC_API_KEY = 'test-key'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/llm-leak-367-1',
+        }),
+      })
+      expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
+      expect(notified.some((b) => b.includes('要約失敗'))).toBe(true)
+      const logged = JSON.stringify(warnSpy.mock.calls)
+      expect(logged).not.toContain('LEAK-SECRET')
+      expect(logged).not.toContain('abc123')
+      expect(JSON.stringify(notified)).not.toContain('LEAK-SECRET')
+      expect(JSON.stringify(notified)).not.toContain('abc123')
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = saved.notify
+      testEnv.ENABLE_SUMMARY = saved.summary
+      testEnv.ENABLE_AUTO_TAGS = saved.tags
+      testEnv.SUMMARY_PROVIDER = saved.provider
+      testEnv.ANTHROPIC_API_KEY = saved.key
+      testEnv.AI = saved.ai
+      warnSpy.mockRestore()
+    }
+  })
+
   /// tags に不正な値 (配列でない) が送られて droppedTags になったとき、
   /// 本文取得/要約/タグ生成/インデックス破損と同じく webhook へ通知すること (#133)。
   /// 以前は console.warn 止まりで、他の失敗系との扱いが不揃いだった。
