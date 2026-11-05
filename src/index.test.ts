@@ -1700,7 +1700,43 @@ describe('fetchArticle', () => {
     const r = await fetchArticle('https://example.com/sf', brEnv)
     expect(r.md).toBe('')
     expect(r.via).toBeUndefined()
-    expect(r.err).toContain('browser-rendering success=false: render failed')
+    expect(r.err).toContain('browser-rendering success=false (code 1)')
+    expect(r.err).not.toContain('render failed')
+  })
+
+  it('does not copy browser-rendering free text into logs or err (#363)', async () => {
+    const MARKER = 'PRIVATE_ARTICLE_TEXT demo-token'
+    for (const brRes of [
+      () =>
+        new Response(
+          JSON.stringify({
+            success: false,
+            errors: [{ code: 1, message: MARKER }],
+          }),
+          { status: 200 },
+        ),
+      () => new Response(MARKER, { status: 500 }),
+    ]) {
+      vi.restoreAllMocks()
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        const u = input.toString()
+        if (u.startsWith('https://r.jina.ai/')) {
+          return new Response('rate', { status: 429 })
+        }
+        if (u.includes('/browser-rendering/markdown')) return brRes()
+        return new Response('nope', { status: 404 })
+      })
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      const r = await fetchArticle('https://example.com/leak', brEnv)
+
+      expect(r.md).toBe('')
+      expect(r.err).toContain('browser-rendering')
+      expect(r.err).not.toContain(MARKER)
+      expect(log.mock.calls.map((c) => c.join(' ')).join('\n')).not.toContain(
+        MARKER,
+      )
+    }
   })
 
   it('treats browser-rendering 200 with invalid UTF-8 as a failure (#347)', async () => {
