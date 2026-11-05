@@ -1,6 +1,5 @@
 import type { Bindings } from './bindings'
 import { InvalidUtf8Error, readTextWithLimit } from './bounded-body'
-import { readErrorSnippet } from './error-body'
 import { DEFAULT_MAX_TEXT_CLIP_BYTES } from './text-clip'
 import { hostname } from './url'
 
@@ -206,13 +205,15 @@ async function fetchWithTimeout(
   }
 }
 
-// errors は [{ code, message }] 想定。形が違えば出さない (ログ/ノートへの混入を避ける)。
+// errors は [{ code, message }] 想定。上流の自由文 (message) は本文断片や認証情報を
+// 含みうるため、ログ・err には載せない (#363, ADR 0012)。整数の code だけを出す。
 function describeErrors(errors: unknown): string {
   if (!Array.isArray(errors)) return ''
-  const msgs = errors
-    .map((e) => (e as { message?: unknown } | null)?.message)
-    .filter((m): m is string => typeof m === 'string' && m !== '')
-  return msgs.length ? `: ${msgs.join('; ').slice(0, 200)}` : ''
+  const codes = errors
+    .map((e) => (e as { code?: unknown } | null)?.code)
+    .filter((c): c is number => Number.isSafeInteger(c))
+    .slice(0, 5)
+  return codes.length ? ` (code ${codes.join(',')})` : ''
 }
 
 const LONE_SURROGATE_RE =
@@ -238,8 +239,9 @@ async function fetchViaBrowserRendering(
   )
   try {
     if (!res.ok) {
-      const text = await readErrorSnippet(res)
-      throw new Error(`${res.status}${text ? `: ${text}` : ''}`)
+      // 応答本文の断片は載せない (#363)。ステータスのみ。
+      await res.body?.cancel().catch(() => {})
+      throw new Error(`${res.status}`)
     }
     // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
     // 受信上限は JSON エンベロープと最悪ケース (制御文字 1 バイト = \uXXXX の 6 バイト)
