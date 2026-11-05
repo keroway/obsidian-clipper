@@ -2690,40 +2690,33 @@ describe('notifyWebhook', () => {
     expect(String(warn.mock.calls[0]?.[0])).toContain('401')
   })
 
-  it('警告にレスポンス本文を含める（理由がステータスだけでは分からないため）', async () => {
+  it('警告にレスポンス本文・statusText を含めない（機密を記録しない, #365）', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async () => new Response('channel not found', { status: 404 }),
+      async () =>
+        new Response('channel not found token=SECRET-123', {
+          status: 404,
+          statusText: 'Custom-Status-Text',
+        }),
     )
 
     await notifyWebhook('https://webhook.test/x', 'msg')
 
-    expect(String(warn.mock.calls[0]?.[0])).toContain('channel not found')
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(logged).toContain('404')
+    expect(logged).not.toContain('channel not found')
+    expect(logged).not.toContain('SECRET-123')
+    expect(logged).not.toContain('Custom-Status-Text')
   })
 
-  it('本文が長いときは切り詰める（HTML が返ることがある）', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async () => new Response('x'.repeat(500), { status: 500 }),
-    )
-
-    await notifyWebhook('https://webhook.test/x', 'msg')
-
-    const logged = String(warn.mock.calls[0]?.[0])
-    expect(logged.length).toBeLessThan(300)
-    expect(logged).toContain('x'.repeat(200))
-    expect(logged).not.toContain('x'.repeat(201))
-  })
-
-  it('巨大な本文は上限バイトで cancel し、全量を読まない（#229）', async () => {
+  it('本文は読まずに cancel して破棄する', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     let pulled = 0
     let cancelled = false
-    const chunk = new TextEncoder().encode('x'.repeat(1024))
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         pulled++
-        controller.enqueue(chunk)
+        controller.enqueue(new TextEncoder().encode('x'.repeat(1024)))
       },
       cancel() {
         cancelled = true
@@ -2736,7 +2729,20 @@ describe('notifyWebhook', () => {
     await notifyWebhook('https://webhook.test/x', 'msg')
 
     expect(cancelled).toBe(true)
-    expect(pulled).toBeLessThan(10)
+    expect(pulled).toBeLessThan(3)
+  })
+
+  it('fetch 例外のメッセージを警告に含めない（#365）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error('boom https://hooks.test/SECRET-PATH')
+    })
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(logged).not.toContain('SECRET-PATH')
   })
 
   it('2xx なら警告を出さない', async () => {
@@ -2770,7 +2776,7 @@ describe('notifyWebhook', () => {
 
   // ─── 時間上限（#243）───
 
-  it('エラー本文が止まっても期限でステータスを警告し、完了する', async () => {
+  it('エラー本文が止まってもステータスを警告し、完了する', async () => {
     vi.useFakeTimers()
     try {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

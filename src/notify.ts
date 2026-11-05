@@ -1,5 +1,3 @@
-import { readErrorSnippet } from './error-body'
-
 // webhook への通知。**この関数自身の失敗は通知できない**（通知経路が壊れている
 // ときに使うため）ので、ログに残すのが唯一の手段になる。
 //
@@ -18,9 +16,6 @@ export async function notifyWebhook(
 ): Promise<void> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
-  const aborted = new Promise<'timeout'>((resolve) => {
-    controller.signal.addEventListener('abort', () => resolve('timeout'))
-  })
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -29,25 +24,15 @@ export async function notifyWebhook(
       signal: controller.signal,
     })
     if (!res.ok) {
-      // 本文も出す。webhook 側は理由をボディに書くことが多く、
-      // ステータスだけでは「なぜ弾かれたか」が分からない。
-      // 本文が止まっても期限でステータスだけ記録する。
-      const detail = await Promise.race([safeReadBody(res), aborted])
-      console.warn(
-        `webhook notify failed: ${res.status} ${res.statusText}${detail === 'timeout' ? ' (error body read timed out)' : detail}`,
-      )
+      // 応答本文・statusText・例外メッセージは自由文で、機密を含みうる
+      // （ADR 0012: ログに機密を載せない, #365）。HTTP ステータスの整数のみ記録し、
+      // 本文は読まずに破棄する（読まないので本文が止まっても待たない）。
+      void res.body?.cancel().catch(() => {})
+      console.warn(`webhook notify failed: ${res.status}`)
     }
-  } catch (e) {
-    console.warn('webhook notify failed', (e as Error).message)
+  } catch {
+    console.warn('webhook notify failed: request error or timeout')
   } finally {
     clearTimeout(timer)
   }
-}
-
-// エラー本文の読み取りで**さらに失敗しても**元のエラー報告を潰さない
-// （readErrorSnippet は失敗時に空文字を返す）。長い HTML が返ることもあるので、
-// 全量を読まずバイト上限付きで先頭だけ読む (#229)。
-async function safeReadBody(res: Response): Promise<string> {
-  const text = await readErrorSnippet(res)
-  return text ? ` — ${text}` : ''
 }
