@@ -3452,6 +3452,45 @@ describe('POST /clip - duplicate detection', () => {
     expect(res.status).toBe(500)
   })
 
+  it('does not leak unhandled exception text into the 500 response or logs (#371)', async () => {
+    mockJina()
+    const MARKER = 'SECRET-MARKER-371'
+    const throwingVault = {
+      ...env.VAULT,
+      get: async () => {
+        throw new Error(MARKER)
+      },
+      put: env.VAULT.put.bind(env.VAULT),
+      head: env.VAULT.head.bind(env.VAULT),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub
+    } as any
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      const res = await app.request(
+        `http://example.com/clip`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.SHARED_SECRET}`,
+          },
+          body: JSON.stringify({ url: 'https://example.com/onerror-371' }),
+        },
+        { ...env, VAULT: throwingVault },
+        { waitUntil() {} } as unknown as ExecutionContext,
+      )
+
+      expect(res.status).toBe(500)
+      const text = await res.text()
+      expect(text).not.toContain(MARKER)
+      expect(JSON.parse(text)).toEqual({ ok: false, error: 'internal error' })
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(MARKER)
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('allows re-clipping when the indexed file no longer exists in R2 (ADR 0010)', async () => {
     mockJina()
     const url = 'https://example.com/dedup-deleted-file-unique-1'
