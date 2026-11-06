@@ -383,7 +383,7 @@ If the same image bytes are re-posted and `embed`/`title`/`note`/`tags` is suppl
 | `401` | `{ ok: false, error: 'Unauthorized' }` |
 | `413` | `{ ok: false, error: 'image too large' \| 'text clip too large' \| 'title too large' \| 'note too large' \| 'selection too large' \| 'url too large' \| 'tags too large' \| 'too many tags' \| 'request body too large' }` |
 | `415` | `{ ok: false, error: 'unsupported image type' }` |
-| `500` | `{ ok: false, error: <unhandled error message> }` |
+| `500` | `{ ok: false, error: "internal error" }` (fixed message; the unhandled exception text is not echoed) |
 
 Jina Reader and summary failures do not change the response to an error status for URL clips. The Worker records the failure in the note or logs it, then saves the clip.
 

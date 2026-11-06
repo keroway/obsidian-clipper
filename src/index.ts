@@ -208,11 +208,28 @@ app.onError((err, c) => {
   if (err instanceof HTTPException) {
     return c.json({ ok: false, error: err.message }, err.status)
   }
-  console.error('unhandled', err)
-  return c.json({ ok: false, error: err.message }, 500)
+  // 未処理例外の message / stack には URL・Vault パス・プロバイダ応答の自由文が
+  // 混ざりうる。ADR 0012 の機密非記録方針に従い、ログは許可した標準エラー種別名
+  // だけ、応答は固定メッセージにする (#371)。
+  console.error('unhandled', { kind: safeErrorKind(err) })
+  return c.json({ ok: false, error: 'internal error' }, 500)
 })
 
 export default app
+
+const SAFE_ERROR_KINDS = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'DOMException',
+])
+
+function safeErrorKind(err: unknown): string {
+  const name = err instanceof Error ? err.name : ''
+  return SAFE_ERROR_KINDS.has(name) ? name : 'unknown'
+}
 
 // 入力警告通知の対象表示。URL 検証・正規化前の生入力なので、パス・クエリ・
 // フラグメント・ユーザー情報を Webhook へ複製しないようホスト名だけにする (#262)。
