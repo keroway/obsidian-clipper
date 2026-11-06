@@ -28,18 +28,36 @@ function extractJinaTitle(md: string): string | undefined {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * 例外 message をログ・err へ載せる前に URL のパス・クエリ・フラグメントを落とす (#353)。
- * fetch 例外の message には要求 URL が含まれうるため、URL は origin のみに畳む。
+ * 自前で投げる、message が固定または安全な値だけで組まれた失敗 (#369)。
+ * この型の message だけはログ・err へそのまま載せてよい。
+ */
+class SafeFetchError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SafeFetchError'
+  }
+}
+
+/**
+ * 例外をログ・err へ載せる固定分類へ変換する (#353, #369)。
+ * 任意の例外 message には要求 URL・認証値・本文断片が含まれうる (ADR 0012) ため、
+ * 自前の SafeFetchError 以外は message を一切載せず、例外種別だけで分類する。
  */
 export function describeFetchError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e)
-  return msg.replace(/https?:\/\/[^\s"'<>)\]]+/gi, (m) => {
-    try {
-      return new URL(m).origin
-    } catch {
-      return '<url>'
-    }
-  })
+  if (e instanceof SafeFetchError) return e.message
+  if (e instanceof InvalidUtf8Error) return 'invalid UTF-8'
+  const name = e instanceof Error || e instanceof DOMException ? e.name : ''
+  switch (name) {
+    case 'AbortError':
+    case 'TimeoutError':
+      return 'aborted'
+    case 'TypeError':
+      return 'network error'
+    case 'SyntaxError':
+      return 'invalid JSON'
+    default:
+      return 'error'
+  }
 }
 
 const bodyTooLargeMessage = (maxBytes: number) =>
@@ -241,7 +259,7 @@ async function fetchViaBrowserRendering(
     if (!res.ok) {
       // 応答本文の断片は載せない (#363)。ステータスのみ。
       await res.body?.cancel().catch(() => {})
-      throw new Error(`${res.status}`)
+      throw new SafeFetchError(`${res.status}`)
     }
     // REST API は { success, result } を返す。result が文字列 (markdown) 想定。
     // 受信上限は JSON エンベロープと最悪ケース (制御文字 1 バイト = \uXXXX の 6 バイト)
@@ -262,7 +280,7 @@ async function fetchViaBrowserRendering(
     }
     // success=false は result が非空でも失敗として扱う (#329)。
     if (data.success === false) {
-      throw new Error(`success=false${describeErrors(data.errors)}`)
+      throw new SafeFetchError(`success=false${describeErrors(data.errors)}`)
     }
     const md =
       typeof data.result === 'string'
@@ -273,7 +291,9 @@ async function fetchViaBrowserRendering(
     // JSON の \uD800 エスケープは生バイトとしては正常 UTF-8 なので strictUtf8 では
     // 弾けない。孤立サロゲートは UTF-8 化で U+FFFD に変質するため失敗扱いにする (#360)。
     if (LONE_SURROGATE_RE.test(md)) {
-      throw new Error('browser-rendering result contains lone surrogate')
+      throw new SafeFetchError(
+        'browser-rendering result contains lone surrogate',
+      )
     }
     if (new TextEncoder().encode(md).byteLength > maxBytes) return null
     return md.trim()
