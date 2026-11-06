@@ -2007,6 +2007,36 @@ describe('fetchArticle', () => {
     }
   })
 
+  it('does not copy non-URL free text from fetch exceptions into logs or err (#369)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error(
+        'Authorization: Bearer SYNTHETIC_SECRET_TEST article=SYNTHETIC_PRIVATE_TEXT https://example.com/private?token=hidden',
+      )
+    })
+    const logs: string[] = []
+    vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      logs.push(a.join(' '))
+    })
+
+    vi.useFakeTimers()
+    try {
+      const promise = fetchArticle('https://example.com/article', brEnv)
+      await vi.advanceTimersByTimeAsync(120_000)
+      const r = await promise
+
+      expect(r.md).toBe('')
+      expect(r.err).toBeTruthy()
+      expect(logs.length).toBeGreaterThan(0)
+      for (const text of [r.err ?? '', ...logs]) {
+        expect(text).not.toContain('SYNTHETIC_SECRET_TEST')
+        expect(text).not.toContain('SYNTHETIC_PRIVATE_TEXT')
+        expect(text).not.toContain('Bearer')
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('aborts a stalled response body read once the per-attempt timeout elapses', async () => {
     vi.useFakeTimers()
     try {
@@ -2018,7 +2048,7 @@ describe('fetchArticle', () => {
           const stream = new ReadableStream<Uint8Array>({
             start(controller) {
               signal.addEventListener('abort', () =>
-                controller.error(new Error('aborted')),
+                controller.error(new DOMException('aborted', 'AbortError')),
               )
             },
           })
