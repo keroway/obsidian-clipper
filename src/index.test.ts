@@ -4952,6 +4952,50 @@ describe('POST /clip - image clip', () => {
       const res = await postRaw([...enc.encode('日本語�ok')])
       expect(res.status).toBe(200)
     })
+
+    /// 画像パートの filename ヘッダーの不正バイトも拒否する (#377)。
+    const postFilename = (filenameBytes: number[]) => {
+      const body = new Uint8Array([
+        ...enc.encode(
+          '--local\r\nContent-Disposition: form-data; name="image"; filename="',
+        ),
+        ...filenameBytes,
+        ...enc.encode('"\r\nContent-Type: image/png\r\n\r\n'),
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+        ...enc.encode('\r\n--local--\r\n'),
+      ])
+      return SELF.fetch('http://example.com/clip?refresh=1', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+          'Content-Type': 'multipart/form-data; boundary=local',
+        },
+        body,
+      })
+    }
+
+    it('filename に不正な UTF-8 (0xFF) があれば 400 で拒否する (#377)', async () => {
+      const res = await postFilename([
+        ...enc.encode('secret-'),
+        0xff,
+        ...enc.encode('.png'),
+      ])
+      expect(res.status).toBe(400)
+    })
+
+    it('正常な日本語と正当な U+FFFD の filename は受理する (#377)', async () => {
+      expect((await postFilename([...enc.encode('日本語.png')])).status).toBe(
+        200,
+      )
+      expect((await postFilename([...enc.encode('a�b.png')])).status).toBe(200)
+    })
   })
 
   /// 申告 MIME/拡張子が image/png でも、実バイト列が SVG(や他の任意バイト列)なら

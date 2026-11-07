@@ -74,7 +74,8 @@ function hasFilenameParam(headers: string): boolean {
   return false
 }
 
-// 文字列パート (filename を持たないパート) のバイト列が不正な UTF-8 を含むなら false。
+// 文字列パート (filename を持たないパート) の本文と、ファイルパートのヘッダーが
+// 不正な UTF-8 を含むなら false。
 // boundary が取れない/構造が壊れている場合は判定せず true を返す
 // (構造エラーは後続の formData() が 400 にする)。
 export function multipartTextPartsAreValidUtf8(
@@ -105,13 +106,18 @@ export function multipartTextPartsAreValidUtf8(
     const next = findDelimiter(body, delim, bodyStart)
     const bodyEnd = next ? next.index - 2 : body.length
 
-    const headers = latin1.decode(body.subarray(headStart + 2, headEnd))
-    if (!hasFilenameParam(headers)) {
-      try {
+    const headerBytes = body.subarray(headStart + 2, headEnd)
+    const headers = latin1.decode(headerBytes)
+    try {
+      if (hasFilenameParam(headers)) {
+        // ファイル本文は対象外だが、パーサーが UTF-8 として解釈する filename 等の
+        // ヘッダーの不正バイトは U+FFFD に置換されて保存キーへ混入するため拒否する (#377)。
+        decoder.decode(headerBytes)
+      } else {
         decoder.decode(body.subarray(bodyStart, bodyEnd))
-      } catch {
-        return false
       }
+    } catch {
+      return false
     }
     cur = next
   }
