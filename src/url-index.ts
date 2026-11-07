@@ -29,10 +29,20 @@ export async function sha1Hex(text: string): Promise<string> {
 }
 
 // 警告ログに載せてよい例外情報は種別 (name) だけ。message / key (Vault パス) は
-// ADR 0012 の方針で記録しない (#359)。name が文字列でなければ 'unknown'。
+// ADR 0012 の方針で記録しない (#359)。Error.name は任意文字列を設定できるため、
+// 許可した標準エラー種別名以外は 'unknown' に丸める (#375)。
+const SAFE_ERROR_NAMES = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'DOMException',
+])
+
 function safeErrorName(err: unknown): string {
   const name = err instanceof Error ? err.name : undefined
-  return typeof name === 'string' && /^[A-Za-z]{1,40}$/.test(name)
+  return typeof name === 'string' && SAFE_ERROR_NAMES.has(name)
     ? name
     : 'unknown'
 }

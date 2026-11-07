@@ -1150,6 +1150,36 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
     warnSpy.mockRestore()
   })
 
+  it('任意の英字 Error.name をログに載せない（#375）', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const custom = () => {
+      const e = new Error('x')
+      e.name = 'PrivateCustomerToken'
+      return e
+    }
+    const readVault = {
+      get: async () => ({
+        etag: 'mock',
+        json: async () => {
+          throw custom()
+        },
+      }),
+    } as unknown as R2Bucket
+    const read = await readUrlIndex(readVault, KEY)
+    expect(read.corrupted).toBe(true)
+    const writeVault = {
+      get: async () => {
+        throw custom()
+      },
+    } as unknown as R2Bucket
+    const w = await writeUrlIndexCAS(writeVault, KEY, () => {})
+    expect(w.written).toBe(false)
+    expect(w.reason).toBe('storage-error')
+    expect(warned(warnSpy)).not.toContain('PrivateCustomerToken')
+    expect(warned(warnSpy)).toContain('(unknown)')
+    warnSpy.mockRestore()
+  })
+
   it('writeUrlIndexCAS: 最終フォールバック時の破損スキップ', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     let gets = 0
