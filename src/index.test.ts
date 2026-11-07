@@ -5258,6 +5258,49 @@ describe('POST /clip - image clip', () => {
     }
   })
 
+  it('embed note 失敗時に任意の Error.name を警告ログへ出さない: 新規・重複 (#373)', async () => {
+    const marker = 'private/path?token=EXAMPLE373'
+    const bytes = pngBytes(73)
+    const originalPut = env.VAULT.put.bind(env.VAULT)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(env.VAULT, 'put').mockImplementation(((
+      key: string,
+      value: unknown,
+      options?: { customMetadata?: Record<string, string> },
+    ) => {
+      if (options?.customMetadata?.kind === 'image-note') {
+        const err = new Error('simulated note PUT failure')
+        err.name = marker
+        throw err
+      }
+      // biome-ignore lint/suspicious/noExplicitAny: forwarding to the real R2Bucket.put overload set
+      return (originalPut as any)(key, value, options)
+      // biome-ignore lint/suspicious/noExplicitAny: minimal R2Bucket stub, only put is exercised
+    }) as any)
+    try {
+      const first = await postImage({ embed: '1' }, 'name-leak-373.png', bytes)
+      expect(first.status).toBe(200)
+      expect(
+        ((await first.json()) as { noteFailed?: boolean }).noteFailed,
+      ).toBe(true)
+      const dup = await postImage({ embed: '1' }, 'name-leak-373.png', bytes)
+      expect(dup.status).toBe(200)
+      const dupJson = (await dup.json()) as {
+        duplicate: boolean
+        noteFailed?: boolean
+      }
+      expect(dupJson.duplicate).toBe(true)
+      expect(dupJson.noteFailed).toBe(true)
+      expect(warnSpy).toHaveBeenCalledTimes(2)
+      const warned = JSON.stringify(warnSpy.mock.calls)
+      expect(warned).not.toContain(marker)
+      expect(warned).not.toContain('private/path')
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('重複画像の再送で embed note の PUT が失敗しても既存画像の path を 200 で返す (#257)', async () => {
     const bytes = pngBytes(57)
     const first = await postImage({}, 'dup-note-put-fail-257.png', bytes)
