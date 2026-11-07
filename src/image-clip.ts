@@ -25,6 +25,22 @@ import {
   writeUrlIndexCAS,
 } from './url-index'
 
+// 警告ログに載せてよい例外情報は許可した標準エラー種別名だけ。Error.name は
+// 任意文字列を設定できるため、それ以外は 'unknown' に丸める (ADR 0012, #373)。
+const SAFE_ERROR_KINDS = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'ReferenceError',
+  'DOMException',
+])
+
+function safeErrorKind(e: unknown): string {
+  const name = e instanceof Error ? e.name : ''
+  return SAFE_ERROR_KINDS.has(name) ? name : 'unknown'
+}
+
 export type ImageClipResult =
   | {
       duplicate: true
@@ -210,7 +226,7 @@ export async function saveImageClip(
           // パス・例外メッセージは元画像名を含みうるため出さない (ADR 0012, #351)
           console.warn(
             'clip: 画像は保存済みだが埋め込みノートの保存に失敗しました (duplicate)',
-            e instanceof Error ? e.name : typeof e,
+            safeErrorKind(e),
           )
           if (env.NOTIFY_WEBHOOK_URL) {
             waitUntil(
@@ -270,7 +286,7 @@ export async function saveImageClip(
       // パス・例外メッセージは元画像名を含みうるため出さない (ADR 0012, #351)
       console.warn(
         'clip: 画像は保存済みだが埋め込みノートの保存に失敗しました (new)',
-        e instanceof Error ? e.name : typeof e,
+        safeErrorKind(e),
       )
       if (env.NOTIFY_WEBHOOK_URL) {
         waitUntil(
