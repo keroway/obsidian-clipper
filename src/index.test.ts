@@ -1974,6 +1974,74 @@ describe('fetchArticle', () => {
     expect(r.err).toContain('404')
   })
 
+  describe('jina 非2xx 応答本文の解放 (#383)', () => {
+    // body.cancel を差し替えた Response を作る
+    function responseWithCancel(
+      status: number,
+      cancel: () => Promise<void>,
+    ): { res: Response; cancel: ReturnType<typeof vi.fn> } {
+      const res = new Response('body', { status })
+      const spy = vi.fn(cancel)
+      Object.defineProperty(res.body, 'cancel', { value: spy })
+      return { res, cancel: spy }
+    }
+
+    it('429 を再試行する前に本文を cancel する', async () => {
+      const first = responseWithCancel(429, async () => {})
+      let calls = 0
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) {
+          calls++
+          if (calls === 1) return first.res
+          return new Response('Title: T\n\nOK.', { status: 200 })
+        }
+        return new Response('nope', { status: 404 })
+      })
+
+      const r = await fetchArticle('https://example.com/r1', jinaOnlyEnv)
+      expect(first.cancel).toHaveBeenCalledTimes(1)
+      expect(r.via).toBe('jina-retry')
+    })
+
+    it('404 で終了する前に本文を cancel する', async () => {
+      const gone = responseWithCancel(404, async () => {})
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) return gone.res
+        return new Response('nope', { status: 404 })
+      })
+
+      const r = await fetchArticle('https://example.com/r2', jinaOnlyEnv)
+      expect(gone.cancel).toHaveBeenCalledTimes(1)
+      expect(r.err).toContain('404')
+    })
+
+    it('cancel が reject しても処理を継続する', async () => {
+      const gone = responseWithCancel(404, async () => {
+        throw new Error('cancel failed')
+      })
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) return gone.res
+        return new Response('nope', { status: 404 })
+      })
+
+      const r = await fetchArticle('https://example.com/r3', jinaOnlyEnv)
+      expect(gone.cancel).toHaveBeenCalledTimes(1)
+      expect(r.err).toContain('404')
+    })
+
+    it('cancel が完了しなくても処理を継続する', async () => {
+      const gone = responseWithCancel(404, () => new Promise<void>(() => {}))
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) return gone.res
+        return new Response('nope', { status: 404 })
+      })
+
+      const r = await fetchArticle('https://example.com/r4', jinaOnlyEnv)
+      expect(gone.cancel).toHaveBeenCalledTimes(1)
+      expect(r.err).toContain('404')
+    })
+  })
+
   it('does not fall back to browser-rendering on non-retryable status (404) even when BR is enabled', async () => {
     let brCalls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
