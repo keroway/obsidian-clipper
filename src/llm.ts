@@ -233,7 +233,9 @@ export async function generateTags(
       `workers-ai returned non-string response: ${typeof response}`,
     )
   }
-  const tags = parseTagList((response ?? '').toString())
+  const text = (response ?? '').toString()
+  assertWellFormed('workers-ai', text)
+  const tags = parseTagList(text)
   if (!hasValidTag(tags))
     throw new LlmFailure('workers-ai returned no usable tags')
   return tags

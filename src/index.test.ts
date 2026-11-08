@@ -2590,6 +2590,21 @@ describe('generateTags', () => {
     await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow()
   })
 
+  // #379: 有効なタグ文字と孤立サロゲートが混在する応答を成功扱いにすると、
+  // 正規化時に不正文字だけが黙って欠落する。要約経路と同じく失敗として throw する。
+  it.each([
+    ['上位', 0xd800],
+    ['下位', 0xdc00],
+  ])(
+    'throws when workers-ai tags contain a lone %s surrogate (#379)',
+    async (_label, code) => {
+      const { env: testEnv } = workersAiEnv(`tech${String.fromCharCode(code)}`)
+      await expect(generateTags(testEnv, 'body text', 'Title')).rejects.toThrow(
+        'lone surrogate',
+      )
+    },
+  )
+
   it('falls back to workers-ai when anthropic returns an empty response', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       return new Response(JSON.stringify({ content: [] }), { status: 200 })
