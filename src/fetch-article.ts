@@ -1,5 +1,9 @@
 import type { Bindings } from './bindings'
-import { InvalidUtf8Error, readTextWithLimit } from './bounded-body'
+import {
+  InvalidUtf8Error,
+  readTextWithLimit,
+  releaseBody,
+} from './bounded-body'
 import { DEFAULT_MAX_TEXT_CLIP_BYTES } from './text-clip'
 import { hostname } from './url'
 
@@ -195,15 +199,6 @@ export async function fetchArticle(
   return { md: '', err: lastErr ?? 'fetch failed' }
 }
 
-// 読まない応答本文の cancel を開始する。結果は待たず、拒否も握り潰す。
-function releaseBody(res: Response): void {
-  try {
-    res.body?.cancel().catch(() => {})
-  } catch {
-    // 同期例外も無視 (解放はベストエフォート)
-  }
-}
-
 // Retry-After (秒) を尊重しつつ、無ければ指数バックオフ (0.5s, 1s, ...)
 function retryDelayMs(res: Response | null, attempt: number): number {
   if (res) {
@@ -270,7 +265,7 @@ async function fetchViaBrowserRendering(
   try {
     if (!res.ok) {
       // 応答本文の断片は載せない (#363)。ステータスのみ。
-      await res.body?.cancel().catch(() => {})
+      releaseBody(res) // cancel は待たない (#391)
       throw new SafeFetchError(`${res.status}`)
     }
     // REST API は { success, result } を返す。result が文字列 (markdown) 想定。

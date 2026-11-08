@@ -1,5 +1,5 @@
 import type { Bindings } from './bindings'
-import { readTextWithLimit } from './bounded-body'
+import { readTextWithLimit, releaseBody } from './bounded-body'
 import {
   AUTO_TAG_SYSTEM_PROMPT,
   buildSummaryUserPrompt,
@@ -272,7 +272,7 @@ async function anthropicComplete(
       // 上流のエラー本文は例外メッセージに含めない (#355)。メッセージは console.warn と
       // webhook 通知にそのまま渡るため、自由文を載せると ADR 0012 の方針に反して複製される。
       // 本文は読み捨てて接続を解放し、ステータスだけを残す。
-      await res.body?.cancel().catch(() => {})
+      releaseBody(res) // cancel は待たない (#391)
       throw new LlmFailure(`anthropic ${res.status}`)
     }
     // 不正 UTF-8 は U+FFFD 置換で成功扱いにせず throw し、フォールバック経路へ渡す (#349)

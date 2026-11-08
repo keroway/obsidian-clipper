@@ -12,6 +12,18 @@ export class InvalidUtf8Error extends Error {
 }
 
 /**
+ * 読まない応答本文の cancel を開始する。結果は待たず、拒否・同期例外も握り潰す。
+ * cancel が未解決のままでも呼び出し側の処理を止めない (#391)。
+ */
+export function releaseBody(res: Response): void {
+  try {
+    res.body?.cancel().catch(() => {})
+  } catch {
+    // 解放はベストエフォート
+  }
+}
+
+/**
  * `strictUtf8: true` のときは不正 UTF-8 を U+FFFD に置換せず InvalidUtf8Error を
  * throw する (#345)。既定は従来どおり置換。
  */
