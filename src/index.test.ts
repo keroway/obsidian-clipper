@@ -2040,6 +2040,25 @@ describe('fetchArticle', () => {
       expect(gone.cancel).toHaveBeenCalledTimes(1)
       expect(r.err).toContain('404')
     })
+
+    // #391: Browser Rendering の非2xx でも cancel の完了を待たない
+    it('Browser Rendering の非2xx で cancel が完了しなくても失敗を返す', async () => {
+      const bad = responseWithCancel(500, () => new Promise<void>(() => {}))
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+        if (input.toString().startsWith('https://r.jina.ai/')) {
+          return new Response('x', {
+            status: 503,
+            headers: { 'Retry-After': '0' },
+          })
+        }
+        return bad.res
+      })
+
+      const r = await fetchArticle('https://example.com/r5', brEnv)
+      expect(bad.cancel).toHaveBeenCalledTimes(1)
+      expect(r.md).toBe('')
+      expect(r.err).toContain('browser-rendering 500')
+    })
   })
 
   it('does not fall back to browser-rendering on non-retryable status (404) even when BR is enabled', async () => {
@@ -2390,6 +2409,28 @@ describe('summarizeWithProvider', () => {
       'ok 😀 � end',
     )
     expect(run).not.toHaveBeenCalled()
+  })
+
+  // #391: 非2xx の本文 cancel が完了しなくても workers-ai へフォールバックする。
+  it('falls back to workers-ai even if cancelling the anthropic error body never settles', async () => {
+    const res = new Response('err', { status: 503 })
+    const cancel = vi.fn(() => new Promise<void>(() => {}))
+    Object.defineProperty(res.body, 'cancel', { value: cancel })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => res)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { env, run } = workersAiEnv('fallbackSummary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+
+    expect(await summarizeWithProvider(testEnv, 'body text', 'Title')).toBe(
+      'fallbackSummary',
+    )
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
   // #355: 非2xx のエラー本文 (上流の自由文) を警告ログへ複製しない。
