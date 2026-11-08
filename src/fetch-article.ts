@@ -130,6 +130,9 @@ export async function fetchArticle(
           }
         }
         lastErr = `jina ${res.status}`
+        // 不要な本文ストリームは待機・終了より前に解放する (#383)。cancel の
+        // 拒否・未完了でクリップ処理を止めないよう await しない。
+        releaseBody(res)
         // リトライ対象ステータスかつ残り回数があるときだけ待って再試行
         if (JINA_RETRY_STATUS.has(res.status)) {
           retryableFailure = true
@@ -190,6 +193,15 @@ export async function fetchArticle(
   }
 
   return { md: '', err: lastErr ?? 'fetch failed' }
+}
+
+// 読まない応答本文の cancel を開始する。結果は待たず、拒否も握り潰す。
+function releaseBody(res: Response): void {
+  try {
+    res.body?.cancel().catch(() => {})
+  } catch {
+    // 同期例外も無視 (解放はベストエフォート)
+  }
 }
 
 // Retry-After (秒) を尊重しつつ、無ければ指数バックオフ (0.5s, 1s, ...)
