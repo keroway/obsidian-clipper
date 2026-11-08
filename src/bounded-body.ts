@@ -34,23 +34,28 @@ export async function readTextWithLimit(
   })
   let received = 0
   let text = ''
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      received += value.byteLength
-      if (received > maxBytes) {
+  // 不正 UTF-8 への変換は decoder の例外だけに限定する。reader.read() 由来の
+  // TypeError (ストリーム失敗) は元のまま伝播させ、呼び出し側のリトライを妨げない (#381)。
+  const decode = (chunk?: Uint8Array, stream = false): string => {
+    try {
+      return chunk ? decoder.decode(chunk, { stream }) : decoder.decode()
+    } catch (e) {
+      if (e instanceof TypeError && options.strictUtf8) {
         void reader.cancel().catch(() => {})
-        return null
+        throw new InvalidUtf8Error()
       }
-      text += decoder.decode(value, { stream: true })
+      throw e
     }
-    return text + decoder.decode()
-  } catch (e) {
-    if (e instanceof TypeError && options.strictUtf8) {
-      void reader.cancel().catch(() => {})
-      throw new InvalidUtf8Error()
-    }
-    throw e
   }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.byteLength
+    if (received > maxBytes) {
+      void reader.cancel().catch(() => {})
+      return null
+    }
+    text += decode(value, true)
+  }
+  return text + decode()
 }

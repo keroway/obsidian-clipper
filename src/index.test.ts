@@ -4650,6 +4650,27 @@ describe('readJsonWithLimit（#237）', () => {
       })
       await expect(readTextWithLimit(res, 1)).resolves.toBeNull()
     })
+
+    it('readTextWithLimit: strictUtf8 でもストリーム読み取りの TypeError は不正 UTF-8 扱いにしない (#381)', async () => {
+      const err = new TypeError('stream failed')
+      const res = new Response(
+        new ReadableStream({
+          pull(c) {
+            c.error(err)
+          },
+        }),
+      )
+      await expect(
+        readTextWithLimit(res, 100, { strictUtf8: true }),
+      ).rejects.toBe(err)
+    })
+
+    it('readTextWithLimit: strictUtf8 で不正バイトは InvalidUtf8Error', async () => {
+      const res = new Response(new Uint8Array([0xff, 0xfe]))
+      await expect(
+        readTextWithLimit(res, 100, { strictUtf8: true }),
+      ).rejects.toMatchObject({ name: 'InvalidUtf8Error' })
+    })
   })
 
   it('上限内の JSON はそのまま解析し、不正な JSON は 400 を投げる', async () => {
