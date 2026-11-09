@@ -2916,6 +2916,26 @@ describe('notifyWebhook', () => {
     expect(pulled).toBeLessThan(3)
   })
 
+  it('2xx の本文も cancel して破棄し、cancel が未完了でも完了する（#397）', async () => {
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode('ok'))
+      },
+      cancel() {
+        cancelled = true
+        return new Promise<void>(() => {})
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response(body, { status: 200 }),
+    )
+
+    await notifyWebhook('https://webhook.test/x', 'msg')
+
+    expect(cancelled).toBe(true)
+  })
+
   it('fetch 例外のメッセージを警告に含めない（#365）', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {

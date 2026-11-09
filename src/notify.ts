@@ -8,6 +8,8 @@
 //
 // POST からエラー本文の読み取りまでを含む有限の期限を設ける (#243)。通知先が
 // ヘッダーや本文を返さず止まっても、失敗ログを出して処理を完了させるため。
+import { releaseBody } from './bounded-body'
+
 export const WEBHOOK_TIMEOUT_MS = 5000
 
 export async function notifyWebhook(
@@ -23,11 +25,11 @@ export async function notifyWebhook(
       body: JSON.stringify({ text: message, content: message }),
       signal: controller.signal,
     })
+    // 本文は成功・失敗を問わず不要なので、読まずに破棄する（cancel の完了は待たない, #397）。
+    releaseBody(res)
     if (!res.ok) {
       // 応答本文・statusText・例外メッセージは自由文で、機密を含みうる
-      // （ADR 0012: ログに機密を載せない, #365）。HTTP ステータスの整数のみ記録し、
-      // 本文は読まずに破棄する（読まないので本文が止まっても待たない）。
-      void res.body?.cancel().catch(() => {})
+      // （ADR 0012: ログに機密を載せない, #365）。HTTP ステータスの整数のみ記録する。
       console.warn(`webhook notify failed: ${res.status}`)
     }
   } catch {
