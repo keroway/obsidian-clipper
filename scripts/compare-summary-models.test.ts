@@ -219,6 +219,62 @@ describe('受信バイト上限 (#398)', () => {
   })
 })
 
+describe('不正 UTF-8 の拒否 (#401)', () => {
+  const enc = new TextEncoder()
+
+  async function withFetch<T>(res: Response, fn: () => Promise<T>): Promise<T> {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => res) as unknown as typeof fetch
+    try {
+      return await fn()
+    } finally {
+      globalThis.fetch = original
+    }
+  }
+
+  const modelBody = (response: string) =>
+    enc.encode(JSON.stringify({ success: true, result: { response } }))
+
+  it('fetchMarkdown: 不正 UTF-8 の本文は取得失敗にする', async () => {
+    const res = new Response(new Uint8Array([65, 255, 66]), { status: 200 })
+    await withFetch(res, async () => {
+      await expect(fetchMarkdown('https://example.invalid')).rejects.toThrow(
+        'invalid UTF-8',
+      )
+    })
+  })
+
+  it('fetchMarkdown: 日本語・絵文字・明示的な U+FFFD は受理する', async () => {
+    const res = new Response(enc.encode('本文 😀 �'), { status: 200 })
+    await withFetch(res, async () => {
+      await expect(fetchMarkdown('https://example.invalid')).resolves.toBe(
+        '本文 😀 �',
+      )
+    })
+  })
+
+  it('runModel: 不正 UTF-8 の応答は error 結果にする', async () => {
+    const head = enc.encode('{"success":true,"result":{"response":"')
+    const tail = enc.encode('"}}')
+    const bytes = new Uint8Array([...head, 255, ...tail])
+    await withFetch(new Response(bytes, { status: 200 }), async () => {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+      expect(r.error).toContain('invalid UTF-8')
+      expect(r.summary).toBe('')
+      expect(classifyResult(r)).toBe('error')
+    })
+  })
+
+  it('runModel: 日本語・絵文字・明示的な U+FFFD は受理する', async () => {
+    const res = new Response(modelBody('要約 😀 �'), { status: 200 })
+    await withFetch(res, async () => {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+      expect(r.error).toBeUndefined()
+      expect(r.summary).toBe('要約 😀 �')
+    })
+  })
+})
+
 describe('runModel', () => {
   // #282: ヘッダー受信 (t=10) 後に本文読み取りが遅れる (t=110) 応答を再現する。
   async function latencyFor(res: {
