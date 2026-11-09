@@ -217,6 +217,36 @@ describe('runModel', () => {
     },
   )
 
+  it.each([
+    ['孤立上位サロゲート', `要約${String.fromCharCode(0xd800)}`, true],
+    ['孤立下位サロゲート', `${String.fromCharCode(0xdc00)}要約`, true],
+    ['正常なサロゲートペア', '要約😀', false],
+    ['明示的な U+FFFD', '要約�', false],
+  ])(
+    '%s を本番と同じ基準で判定する (#395)',
+    async (_name, response, rejected) => {
+      const original = globalThis.fetch
+      globalThis.fetch = (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, result: { response } }),
+      })) as unknown as typeof fetch
+      try {
+        const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+        if (rejected) {
+          expect(r.error).toContain('lone surrogate')
+          expect(r.summary).toBe('')
+          expect(classifyResult(r)).toBe('error')
+        } else {
+          expect(r.error).toBeUndefined()
+          expect(classifyResult(r)).toBe('ok')
+        }
+      } finally {
+        globalThis.fetch = original
+      }
+    },
+  )
+
   it('response 欠落は空要約のまま扱う (#285)', async () => {
     const original = globalThis.fetch
     globalThis.fetch = (async () => ({
