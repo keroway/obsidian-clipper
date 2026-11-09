@@ -61,6 +61,11 @@ const FOREIGN_SCRIPTS: Array<{ name: string; re: RegExp }> = [
   { name: 'Greek', re: /[Ͱ-Ͽ]/ },
 ]
 
+// src/llm.ts の LONE_SURROGATE_RE と同一 (本番の受理条件に揃える, #395)。
+// 正常なサロゲートペアと明示的な U+FFFD は通す。
+const LONE_SURROGATE_RE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 type ModelResult = {
   model: string
   summary: string
@@ -198,6 +203,16 @@ async function runModel(
         latencyMs,
         foreign: [],
         error: `summary too long (${summary.length} > ${SUMMARY_MAX_CHARS} chars)`,
+      }
+    }
+    // 本番 (src/llm.ts assertWellFormed) と同じく、孤立サロゲートは受理せずエラーにする (#395)
+    if (LONE_SURROGATE_RE.test(summary)) {
+      return {
+        model,
+        summary: '',
+        latencyMs,
+        foreign: [],
+        error: 'response contains lone surrogate',
       }
     }
     const foreign = FOREIGN_SCRIPTS.filter((s) => s.re.test(summary)).map(
