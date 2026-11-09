@@ -11,6 +11,41 @@ import {
 // #164: 本文取得失敗・空要約がエラー0件として集計される不具合の回帰テスト。
 // fetchMarkdown / runModel を通信モックで差し替え、実ネットワークには一切触れない。
 
+// 本文読み取りが signal の abort まで完了しない応答 (#287)。実 fetch と同様に abort で本文ストリームが失敗する。
+function hangingBodyResponse(signal: AbortSignal | null | undefined): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      signal?.addEventListener('abort', () =>
+        controller.error(new DOMException('aborted', 'AbortError')),
+      )
+    },
+  })
+  return new Response(body, { status: 200 })
+}
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), { status })
+}
+
+// 指定チャンクを順に流し、何チャンク pull されたかを数える応答 (#398)。
+function chunkedResponse(
+  chunks: Uint8Array[],
+  onCancel?: () => void,
+): { res: Response; pulled: () => number } {
+  let i = 0
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const c = chunks[i++]
+      if (c) controller.enqueue(c)
+      else controller.close()
+    },
+    cancel() {
+      onCancel?.()
+    },
+  })
+  return { res: new Response(body, { status: 200 }), pulled: () => i }
+}
+
 function okResult(model: string, summary: string): ModelResult {
   return { model, summary, latencyMs: 10, foreign: [] }
 }
@@ -56,11 +91,9 @@ describe('通信タイムアウト (#287)', () => {
   it('fetchMarkdown: 本文読み取りが期限を超えたら取得失敗にする', async () => {
     const original = globalThis.fetch
     globalThis.fetch = ((_: unknown, init?: RequestInit) =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        text: () => hang(init?.signal),
-      })) as unknown as typeof fetch
+      Promise.resolve(
+        hangingBodyResponse(init?.signal),
+      )) as unknown as typeof fetch
     try {
       await expect(
         fetchMarkdown('https://example.invalid', undefined, 20),
@@ -86,11 +119,9 @@ describe('通信タイムアウト (#287)', () => {
   it('runModel: 本文読み取りが期限を超えたら error 結果を返す', async () => {
     const original = globalThis.fetch
     globalThis.fetch = ((_: unknown, init?: RequestInit) =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => hang(init?.signal),
-      })) as unknown as typeof fetch
+      Promise.resolve(
+        hangingBodyResponse(init?.signal),
+      )) as unknown as typeof fetch
     try {
       const r = await runModel('acc', 'tok', 'model', 'body', undefined, 20)
       expect(r.error).toBe('timeout after 20ms')
@@ -118,6 +149,76 @@ describe('通信タイムアウト (#287)', () => {
   })
 })
 
+describe('受信バイト上限 (#398)', () => {
+  const enc = new TextEncoder()
+
+  async function withFetch<T>(res: Response, fn: () => Promise<T>): Promise<T> {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => res) as unknown as typeof fetch
+    try {
+      return await fn()
+    } finally {
+      globalThis.fetch = original
+    }
+  }
+
+  it('fetchMarkdown: Content-Length が上限超過なら読まずに取得失敗にする', async () => {
+    const { res, pulled } = chunkedResponse([enc.encode('x')])
+    const big = new Response(res.body, {
+      status: 200,
+      headers: { 'content-length': String(10 * 1024 * 1024) },
+    })
+    await withFetch(big, async () => {
+      await expect(fetchMarkdown('https://example.invalid')).rejects.toThrow(
+        'jina response too large',
+      )
+    })
+    expect(pulled()).toBeLessThanOrEqual(1)
+  })
+
+  it('fetchMarkdown: 複数チャンクの累計が上限を超えたら打ち切る', async () => {
+    const chunk = new Uint8Array(600 * 1024).fill(0x61)
+    const { res, pulled } = chunkedResponse([chunk, chunk, chunk, chunk])
+    await withFetch(res, async () => {
+      await expect(fetchMarkdown('https://example.invalid')).rejects.toThrow(
+        'jina response too large',
+      )
+    })
+    expect(pulled()).toBeLessThan(4)
+  })
+
+  it('fetchMarkdown: 上限以内の正常応答は受理する', async () => {
+    const { res } = chunkedResponse([
+      enc.encode('Title: A\n'),
+      enc.encode('本文'),
+    ])
+    await withFetch(res, async () => {
+      await expect(fetchMarkdown('https://example.invalid')).resolves.toBe(
+        'Title: A\n本文',
+      )
+    })
+  })
+
+  it('runModel: 巨大な単一チャンクは error 結果にする', async () => {
+    const { res } = chunkedResponse([new Uint8Array(1024 * 1024).fill(0x61)])
+    await withFetch(res, async () => {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+      expect(r.error).toContain('response too large')
+      expect(classifyResult(r)).toBe('error')
+    })
+  })
+
+  it('runModel: 複数チャンクの累計超過は error 結果にする', async () => {
+    const chunk = new Uint8Array(100 * 1024).fill(0x61)
+    const { res, pulled } = chunkedResponse([chunk, chunk, chunk, chunk, chunk])
+    await withFetch(res, async () => {
+      const r = await runModel('acc', 'tok', 'model', 'body', undefined)
+      expect(r.error).toContain('response too large')
+    })
+    expect(pulled()).toBeLessThan(5)
+  })
+})
+
 describe('runModel', () => {
   // #282: ヘッダー受信 (t=10) 後に本文読み取りが遅れる (t=110) 応答を再現する。
   async function latencyFor(res: {
@@ -130,14 +231,14 @@ describe('runModel', () => {
     const original = globalThis.fetch
     globalThis.fetch = (async () => {
       now = 10
-      return {
-        ok: res.ok,
-        status: res.status,
-        json: async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
           now = 110
-          return res.body
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(res.body)))
+          controller.close()
         },
-      }
+      })
+      return new Response(stream, { status: res.status })
     }) as unknown as typeof fetch
     try {
       const r = await runModel('acc', 'tok', 'model', 'body', undefined)
@@ -172,11 +273,11 @@ describe('runModel', () => {
     '非文字列の response %j を要約として受理せずエラーにする (#285)',
     async (response) => {
       const original = globalThis.fetch
-      globalThis.fetch = (async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({ success: true, result: { response } }),
-      })) as unknown as typeof fetch
+      globalThis.fetch = (async () =>
+        jsonResponse({
+          success: true,
+          result: { response },
+        })) as unknown as typeof fetch
       try {
         const r = await runModel('acc', 'tok', 'model', 'body', undefined)
         expect(r.error).toContain('non-string response')
@@ -194,14 +295,11 @@ describe('runModel', () => {
     '要約長 %i 文字を本番と同じ上限で判定する (#303)',
     async (length, expectedError) => {
       const original = globalThis.fetch
-      globalThis.fetch = (async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({
+      globalThis.fetch = (async () =>
+        jsonResponse({
           success: true,
           result: { response: 'a'.repeat(length) },
-        }),
-      })) as unknown as typeof fetch
+        })) as unknown as typeof fetch
       try {
         const r = await runModel('acc', 'tok', 'model', 'body', undefined)
         if (expectedError) {
@@ -226,11 +324,11 @@ describe('runModel', () => {
     '%s を本番と同じ基準で判定する (#395)',
     async (_name, response, rejected) => {
       const original = globalThis.fetch
-      globalThis.fetch = (async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({ success: true, result: { response } }),
-      })) as unknown as typeof fetch
+      globalThis.fetch = (async () =>
+        jsonResponse({
+          success: true,
+          result: { response },
+        })) as unknown as typeof fetch
       try {
         const r = await runModel('acc', 'tok', 'model', 'body', undefined)
         if (rejected) {
@@ -249,11 +347,8 @@ describe('runModel', () => {
 
   it('response 欠落は空要約のまま扱う (#285)', async () => {
     const original = globalThis.fetch
-    globalThis.fetch = (async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, result: {} }),
-    })) as unknown as typeof fetch
+    globalThis.fetch = (async () =>
+      jsonResponse({ success: true, result: {} })) as unknown as typeof fetch
     try {
       const r = await runModel('acc', 'tok', 'model', 'body', undefined)
       expect(r.error).toBeUndefined()
