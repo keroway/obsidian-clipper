@@ -132,7 +132,10 @@ async function fetchMarkdown(
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`jina ${res.status}`)
-    const raw = await readTextWithLimit(res, JINA_RESPONSE_MAX_BYTES)
+    // 本番 (src/fetch-article.ts) と同じく、不正 UTF-8 は U+FFFD に置換せず失敗にする (#401)
+    const raw = await readTextWithLimit(res, JINA_RESPONSE_MAX_BYTES, {
+      strictUtf8: true,
+    })
     if (raw === null) {
       throw new Error(
         `jina response too large (> ${JINA_RESPONSE_MAX_BYTES} bytes)`,
@@ -181,7 +184,10 @@ async function runModel(
         }),
       },
     )
-    const raw = await readTextWithLimit(res, MODEL_RESPONSE_MAX_BYTES)
+    // 本番 (src/llm.ts) と同じく、不正 UTF-8 は U+FFFD に置換せず error 結果にする (#401)
+    const raw = await readTextWithLimit(res, MODEL_RESPONSE_MAX_BYTES, {
+      strictUtf8: true,
+    })
     if (raw === null) {
       return {
         model,
