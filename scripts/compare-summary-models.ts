@@ -25,6 +25,7 @@
 
 // プロンプト定数は src/prompts.ts を本番 Worker (src/llm.ts) と共有している (ADR 0009)。
 // 以前はここに手動コピーしていたが、本番側を変えたら必ず同期する運用負債があったため共有化した。
+import { readTextWithLimit } from '../src/bounded-body'
 import {
   buildSummaryUserPrompt,
   SUMMARY_MAX_CHARS,
@@ -109,6 +110,13 @@ async function readSampleUrls(): Promise<string[]> {
 // 同じタイマーを維持し、finally で解除する (#287)。
 const REQUEST_TIMEOUT_MS = 60_000
 
+// 受信バイト数の上限 (#398)。本番 (src/fetch-article.ts / src/llm.ts) と同様に
+// Content-Length と逐次読み取り量で検査し、超過時は読み取りを打ち切る。
+// Jina 本文は本番の DEFAULT_MAX_TEXT_CLIP_BYTES (src/text-clip.ts, 1 MiB) と同値。
+// text-clip.ts は Workers 型に依存し scripts の tsconfig で解決できないため再宣言する。
+const JINA_RESPONSE_MAX_BYTES = 1 * 1024 * 1024
+const MODEL_RESPONSE_MAX_BYTES = 256 * 1024
+
 async function fetchMarkdown(
   url: string,
   jinaKey?: string,
@@ -124,7 +132,13 @@ async function fetchMarkdown(
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`jina ${res.status}`)
-    const body = (await res.text()).trim()
+    const raw = await readTextWithLimit(res, JINA_RESPONSE_MAX_BYTES)
+    if (raw === null) {
+      throw new Error(
+        `jina response too large (> ${JINA_RESPONSE_MAX_BYTES} bytes)`,
+      )
+    }
+    const body = raw.trim()
     if (body.length === 0) throw new Error('jina empty body')
     return body
   } catch (e) {
@@ -167,7 +181,17 @@ async function runModel(
         }),
       },
     )
-    const data = (await res.json()) as {
+    const raw = await readTextWithLimit(res, MODEL_RESPONSE_MAX_BYTES)
+    if (raw === null) {
+      return {
+        model,
+        summary: '',
+        latencyMs: Date.now() - started,
+        foreign: [],
+        error: `response too large (> ${MODEL_RESPONSE_MAX_BYTES} bytes)`,
+      }
+    }
+    const data = JSON.parse(raw) as {
       success?: boolean
       result?: { response?: unknown }
       errors?: Array<{ message?: string }>
