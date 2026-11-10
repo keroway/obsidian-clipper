@@ -25,7 +25,7 @@
 
 // プロンプト定数は src/prompts.ts を本番 Worker (src/llm.ts) と共有している (ADR 0009)。
 // 以前はここに手動コピーしていたが、本番側を変えたら必ず同期する運用負債があったため共有化した。
-import { readTextWithLimit } from '../src/bounded-body'
+import { readTextWithLimit, releaseBody } from '../src/bounded-body'
 import {
   buildSummaryUserPrompt,
   SUMMARY_MAX_CHARS,
@@ -131,7 +131,11 @@ async function fetchMarkdown(
       headers,
       signal: controller.signal,
     })
-    if (!res.ok) throw new Error(`jina ${res.status}`)
+    if (!res.ok) {
+      // 読まない本文は解放する (#405)。cancel の完了は待たない
+      releaseBody(res)
+      throw new Error(`jina ${res.status}`)
+    }
     // 本番 (src/fetch-article.ts) と同じく、不正 UTF-8 は U+FFFD に置換せず失敗にする (#401)
     const raw = await readTextWithLimit(res, JINA_RESPONSE_MAX_BYTES, {
       strictUtf8: true,

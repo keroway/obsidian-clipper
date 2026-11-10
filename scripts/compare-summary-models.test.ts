@@ -63,6 +63,53 @@ describe('fetchMarkdown', () => {
       globalThis.fetch = original
     }
   })
+
+  it('非2xx 応答では未読の本文ストリームを cancel して HTTP エラーを返す (#405)', async () => {
+    const original = globalThis.fetch
+    let cancelled = 0
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('error'))
+        },
+        cancel() {
+          cancelled++
+        },
+      })
+      return new Response(body, { status: 503 })
+    }) as unknown as typeof fetch
+    try {
+      await expect(fetchMarkdown('https://example.invalid')).rejects.toThrow(
+        'jina 503',
+      )
+      await Promise.resolve()
+      expect(cancelled).toBe(1)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('非2xx 応答の cancel が拒否されても元の HTTP エラーを返す (#405)', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('error'))
+        },
+        cancel() {
+          throw new Error('cancel failed')
+        },
+      })
+      return new Response(body, { status: 502 })
+    }) as unknown as typeof fetch
+    try {
+      await expect(fetchMarkdown('https://example.invalid')).rejects.toThrow(
+        'jina 502',
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+  })
 })
 
 // #287: signal が abort されたら reject する、永久に完了しない待機を作る。
