@@ -37,6 +37,7 @@ import {
 } from './note'
 import { notifyWebhook, WEBHOOK_TIMEOUT_MS } from './notify'
 import { buildClipEvent } from './observe'
+import { buildSummaryUserPrompt, SUMMARY_EXCERPT_LIMIT } from './prompts'
 import {
   autoTagsEnabled,
   hostTagsFor,
@@ -2189,6 +2190,25 @@ describe('fetchArticle', () => {
 })
 
 // ─────────────────── summarizeWithProvider / generateTags ───────────────────
+
+describe('buildSummaryUserPrompt（#409: サロゲートペアを分断しない）', () => {
+  const lone =
+    /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+
+  it('上限境界をまたぐ絵文字は丸ごと切り落とし、孤立サロゲートを残さない', () => {
+    const md = `${'a'.repeat(SUMMARY_EXCERPT_LIMIT - 1)}\u{1F600}tail`
+    const prompt = buildSummaryUserPrompt(md, undefined)
+    expect(lone.test(prompt)).toBe(false)
+    expect(prompt.endsWith('a')).toBe(true)
+  })
+
+  it('境界の手前で完結する絵文字は保持する', () => {
+    const md = `${'a'.repeat(SUMMARY_EXCERPT_LIMIT - 2)}\u{1F600}tail`
+    const prompt = buildSummaryUserPrompt(md, undefined)
+    expect(prompt.endsWith('\u{1F600}')).toBe(true)
+    expect(lone.test(prompt)).toBe(false)
+  })
+})
 
 describe('summarizeWithProvider', () => {
   beforeEach(() => {
