@@ -5100,6 +5100,14 @@ describe('POST /clip - image clip', () => {
       expect(res.status).toBe(400)
     })
 
+    it('filename* のみの title パートでも不正バイトを拒否する (#407)', async () => {
+      const res = await postRaw(
+        [...enc.encode('before'), 0xff],
+        'Content-Disposition: form-data; name="title"; filename*=utf-8\'\'ignored.txt',
+      )
+      expect(res.status).toBe(400)
+    })
+
     it('title 本文中の偽の終端行 (--local--not-a-boundary) 以降の不正バイトも拒否する (#335)', async () => {
       const res = await postRaw([
         ...enc.encode('hello\r\n--local--not-a-boundary\r\n'),

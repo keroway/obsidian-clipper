@@ -63,13 +63,15 @@ function findDelimiter(
   return null
 }
 
-// Content-Disposition ヘッダーの実際の filename / filename* パラメータだけをファイル判定の根拠にする (#333)。
+// Content-Disposition ヘッダーの実際の filename パラメータだけをファイル判定の根拠にする (#333)。
 // 他ヘッダーや引用符内の "filename=" では判定しない。
+// filename* (RFC 8187) のみのパートは、フォーム解析側 (Response.formData) が文字列として
+// 扱うため、ここでもファイル扱いにせず本文を検証する (#407)。
 function hasFilenameParam(headers: string): boolean {
   for (const line of headers.split('\r\n')) {
     if (!/^content-disposition\s*:/i.test(line)) continue
     const unquoted = line.replace(/"(?:[^"\\]|\\.)*"/g, '""')
-    if (/;\s*filename\*?\s*=/i.test(unquoted)) return true
+    if (/;\s*filename\s*=/i.test(unquoted)) return true
   }
   return false
 }
