@@ -5161,6 +5161,49 @@ describe('POST /clip - image clip', () => {
       )
       expect((await postFilename([...enc.encode('a�b.png')])).status).toBe(200)
     })
+
+    /// 文字列パート (filename なし) のヘッダー (フィールド名) の不正バイトも拒否する (#403)。
+    const postFieldName = (nameBytes: number[]) => {
+      const body = new Uint8Array([
+        ...enc.encode('--local\r\nContent-Disposition: form-data; name="'),
+        ...nameBytes,
+        ...enc.encode(
+          '"\r\n\r\nImportant title\r\n--local\r\nContent-Disposition: form-data; name="image"; filename="x.png"\r\nContent-Type: image/png\r\n\r\n',
+        ),
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+        ...enc.encode('\r\n--local--\r\n'),
+      ])
+      return SELF.fetch('http://example.com/clip?refresh=1', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+          'Content-Type': 'multipart/form-data; boundary=local',
+        },
+        body,
+      })
+    }
+
+    it('文字列パートのフィールド名に不正な UTF-8 (0xFF) があれば 400 で拒否する (#403)', async () => {
+      const res = await postFieldName([
+        ...enc.encode('tit'),
+        0xff,
+        ...enc.encode('le'),
+      ])
+      expect(res.status).toBe(400)
+    })
+
+    it('正常な title と日本語・正当な U+FFFD のフィールド名は受理する (#403)', async () => {
+      expect((await postFieldName([...enc.encode('title')])).status).toBe(200)
+      expect((await postFieldName([...enc.encode('日本語')])).status).toBe(200)
+      expect((await postFieldName([...enc.encode('a�b')])).status).toBe(200)
+    })
   })
 
   /// 申告 MIME/拡張子が image/png でも、実バイト列が SVG(や他の任意バイト列)なら

@@ -109,11 +109,12 @@ export function multipartTextPartsAreValidUtf8(
     const headerBytes = body.subarray(headStart + 2, headEnd)
     const headers = latin1.decode(headerBytes)
     try {
-      if (hasFilenameParam(headers)) {
-        // ファイル本文は対象外だが、パーサーが UTF-8 として解釈する filename 等の
-        // ヘッダーの不正バイトは U+FFFD に置換されて保存キーへ混入するため拒否する (#377)。
-        decoder.decode(headerBytes)
-      } else {
+      // パーサーが UTF-8 として解釈する filename / name 等のヘッダーの不正バイトは
+      // U+FFFD に置換される。ファイルパートでは保存キーへ混入し (#377)、
+      // 文字列パートではフィールド名が化けて黙って失われる (#403) ため、全パートで拒否する。
+      decoder.decode(headerBytes)
+      // ファイル本文はバイナリなので対象外。文字列パートの本文だけ検証する。
+      if (!hasFilenameParam(headers)) {
         decoder.decode(body.subarray(bodyStart, bodyEnd))
       }
     } catch {
