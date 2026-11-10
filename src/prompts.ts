@@ -26,7 +26,16 @@ export function buildSummaryUserPrompt(
   md: string,
   title: string | undefined,
 ): string {
-  const excerpt = md.slice(0, SUMMARY_EXCERPT_LIMIT)
+  let end = Math.min(md.length, SUMMARY_EXCERPT_LIMIT)
+  // 切断位置が上位・下位サロゲートの間なら、孤立上位サロゲートを残さないよう1つ戻す (#409)
+  if (end < md.length) {
+    const last = md.charCodeAt(end - 1)
+    const next = md.charCodeAt(end)
+    if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+      end -= 1
+    }
+  }
+  const excerpt = md.slice(0, end)
   return [title ? `タイトル: ${title}` : '', '本文:', excerpt]
     .filter(Boolean)
     .join('\n')
