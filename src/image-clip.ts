@@ -24,6 +24,7 @@ import {
   sha1HexBytes,
   writeUrlIndexCAS,
 } from './url-index'
+import { resolveVaultPrefix } from './vault-path'
 
 // 警告ログに載せてよい例外情報は許可した標準エラー種別名だけ。Error.name は
 // 任意文字列を設定できるため、それ以外は 'unknown' に丸める (ADR 0012, #373)。
@@ -98,7 +99,7 @@ export async function saveImageClip(
     /^\/+|\/+$/g,
     '',
   )
-  const prefix = (env.VAULT_PREFIX || '').replace(/^\/+/, '')
+  const prefix = resolveVaultPrefix(env.VAULT_PREFIX)
   const indexKey = `${prefix}${folder}/.index/urls.json`
 
   const hash = await sha1HexBytes(buf)

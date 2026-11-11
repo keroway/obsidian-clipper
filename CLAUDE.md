@@ -72,7 +72,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **frontmatter スキーマは Keep 移行スクリプトと共通**: `created` / `updated` / `source` / `source_url` / `source_title` / `tags` / `summary`。`source: web-clip` を変えると Dataview クエリが壊れる。`renderNote()` を編集する際はキー名を変えないこと。
 - **Remotely Save は暗号化 OFF 前提**。暗号化を ON にすると Worker 直書きが Obsidian 側で読めない。README にも明記。
-- **`VAULT_PREFIX` は末尾スラッシュ必須または空文字**。`key` 組み立てが `${prefix}${folder}/${filename}` なので、`MyVault` だけだと `MyVaultInbox/...` になる。
+- **`VAULT_PREFIX` は空文字または末尾スラッシュ付きが正**。実行時は `src/vault-path.ts` の `resolveVaultPrefix()` が先頭スラッシュ除去 + 末尾スラッシュ補完をするので `MyVault` でも `MyVault/` と同じキーになる (#411)。キーは必ず `resolveVaultPrefix` 経由で組み立て、`VAULT_PREFIX` を直接連結しないこと。
 - **`INVALID_FILENAME_RE` (`/[\\\/:*?"<>|\[\]#^`]/`)** は macOS / Windows / Obsidian 全部で安全な共通部分集合。緩めない。
 - **時刻は JST 固定**。`jstStamp` / `jstIso` で `+9h` をオフセットしている。Worker は UTC で動くので `Date` を直接フォーマットしないこと。
 - TypeScript strict / Wrangler v4 / Hono ^4 を維持 (HANDOFF 記載の前提)。
@@ -96,6 +96,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `src/notify.ts` — Webhook 通知
   - `src/observe.ts` — クリップ 1 件 1 行の構造化イベント (ADR 0012)。機密を載せない
   - `src/time.ts` — JST タイムスタンプ生成
+  - `src/vault-path.ts` — `VAULT_PREFIX` の正規化 (`resolveVaultPrefix`, #411)
 
   新規ユーティリティは責務に応じて該当モジュールに追加すること。どの責務にも属さない場合は新モジュールを切り出す。
 - `wrangler.jsonc` — バインディング / vars。`bucket_name` は `REPLACE_WITH_YOUR_R2_BUCKET_NAME` のプレースホルダのままなので、デプロイ前に書き換えが必須。
