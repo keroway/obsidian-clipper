@@ -233,7 +233,7 @@ bunx wrangler login
 
 `bucket_name` を Remotely Save と同じ R2 バケット名に変更します。
 
-バケット内で Vault prefix を使っている場合は、`VAULT_PREFIX` に `"MyVault/"` のような値を設定します。末尾スラッシュは必須です。prefix を使っていない場合は `""` のままにします。
+バケット内で Vault prefix を使っている場合は、`VAULT_PREFIX` に `"MyVault/"` のような値を設定します。末尾スラッシュが無くても自動で補完されます。prefix を使っていない場合は `""` のままにします。
 
 バケット名やフォルダは Obsidian の Remotely Save 設定の S3-compatible storage で確認できます。
 
@@ -396,7 +396,7 @@ Jina Reader や要約の失敗は、URL クリップにおいてもエラース�
 
 | 変数 | 既定値 | 説明 |
 | --- | --- | --- |
-| `VAULT_PREFIX` | `""` | R2 上の Vault prefix。空文字または `/` 終端である必要があります。 |
+| `VAULT_PREFIX` | `""` | R2 上の Vault prefix。先頭スラッシュは除去され、末尾スラッシュが無ければ自動で補完されます。 |
 | `INBOX_FOLDER` | `"Inbox"` | Vault ルートからの保存先フォルダ。 |
 | `ATTACHMENTS_FOLDER` | `"Attachments"` | 画像クリップの保存先フォルダ。Vault ルートからの相対パス (ADR 0011)。 |
 | `MAX_IMAGE_BYTES` | `"10485760"` | 画像クリップで許可する最大バイト数 (ADR 0011)。 |
