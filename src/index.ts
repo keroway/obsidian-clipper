@@ -71,6 +71,7 @@ import {
   sha1Hex,
   writeUrlIndexCAS,
 } from './url-index'
+import { resolveVaultPrefix } from './vault-path'
 
 type AppEnv = { Bindings: Bindings; Variables: { clipDetails: ClipDetails } }
 type AppContext = Context<AppEnv>
@@ -263,7 +264,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
 
   // ---- 0. 重複検知 ----
   const folder = (c.env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
-  const prefix = (c.env.VAULT_PREFIX || '').replace(/^\/+/, '')
+  const prefix = resolveVaultPrefix(c.env.VAULT_PREFIX)
   const indexKey = `${prefix}${folder}/.index/urls.json`
   const hash = await sha1Hex(url)
 

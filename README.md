@@ -233,7 +233,7 @@ bunx wrangler login
 
 Set `bucket_name` to the same R2 bucket used by Remotely Save.
 
-If your vault uses a prefix in the bucket, set `VAULT_PREFIX` to a value such as `"MyVault/"`. The trailing slash is required. If no prefix is used, leave it as `""`.
+If your vault uses a prefix in the bucket, set `VAULT_PREFIX` to a value such as `"MyVault/"`. A missing trailing slash is added automatically. If no prefix is used, leave it as `""`.
 
 You can confirm the bucket and folder in Obsidian under Remotely Save settings for S3-compatible storage.
 
@@ -393,7 +393,7 @@ Jina Reader and summary failures do not change the response to an error status f
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `VAULT_PREFIX` | `""` | Prefix for the vault in R2. Must be empty or end with `/`. |
+| `VAULT_PREFIX` | `""` | Prefix for the vault in R2. Empty or ending with `/` (a missing trailing `/` is added automatically). |
 | `INBOX_FOLDER` | `"Inbox"` | Destination folder relative to the vault root. |
 | `ATTACHMENTS_FOLDER` | `"Attachments"` | Destination folder for image clips, relative to the vault root (ADR 0011). |
 | `MAX_IMAGE_BYTES` | `"10485760"` | Maximum accepted image size in bytes for image clips (ADR 0011). |
