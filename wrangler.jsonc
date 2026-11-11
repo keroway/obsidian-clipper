@@ -7,7 +7,7 @@
   //   2. R2 バケットは Remotely Save で使っているものをそのまま流用する。
   //      バケット名を下の "bucket_name" に書き込むこと。
   //   3. Vault が R2 上で "MyVault/" のような prefix を持つなら "VAULT_PREFIX"
-  //      に同じ値を入れる(末尾スラッシュ必須)。prefix なしなら "" のまま。
+  //      に同じ値を入れる(末尾スラッシュは自動補完される)。prefix なしなら "" のまま。
   //   4. 共有シークレット:  bunx wrangler secret put SHARED_SECRET
   //   5. デプロイ:  bunx wrangler deploy
   // ───────────────────────────────────────────────────────────────────────────
