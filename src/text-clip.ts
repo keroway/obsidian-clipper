@@ -7,7 +7,7 @@ import { isNonEmptyString, type TextClipBody } from './clip-input'
 import { makeSlug, renderNote } from './note'
 import { mergeTags } from './tags'
 import { jstIso, jstStamp } from './time'
-import { resolveVaultPrefix } from './vault-path'
+import { resolveFolder, resolveVaultPrefix } from './vault-path'
 
 export type TextClipResult = {
   path: string
@@ -89,7 +89,7 @@ export async function saveTextClip(
   assertFieldWithinLimit(payload.note, maxBytes, 'note')
   assertTagsWithinLimit(payload.tags, maxBytes)
 
-  const folder = (env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
+  const folder = resolveFolder(env.INBOX_FOLDER, 'Inbox')
   const prefix = resolveVaultPrefix(env.VAULT_PREFIX)
 
   const manualTags = payload.tags ?? []
