@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import app from './index'
-import { resolveVaultPrefix } from './vault-path'
+import { resolveFolder, resolveVaultPrefix } from './vault-path'
 
 describe('resolveVaultPrefix (#411)', () => {
   it('空 / 未設定は空文字', () => {
@@ -18,6 +18,44 @@ describe('resolveVaultPrefix (#411)', () => {
     expect(resolveVaultPrefix('MyVault/')).toBe('MyVault/')
     expect(resolveVaultPrefix('/MyVault')).toBe('MyVault/')
     expect(resolveVaultPrefix('/MyVault/')).toBe('MyVault/')
+  })
+})
+
+describe('resolveFolder (#415)', () => {
+  it('前後スラッシュを除去する', () => {
+    expect(resolveFolder('/Inbox/', 'X')).toBe('Inbox')
+    expect(resolveFolder('A/B', 'X')).toBe('A/B')
+  })
+
+  it('空 / 未設定 / スラッシュのみは既定値へ復帰する', () => {
+    expect(resolveFolder(undefined, 'Inbox')).toBe('Inbox')
+    expect(resolveFolder('', 'Inbox')).toBe('Inbox')
+    expect(resolveFolder('///', 'Inbox')).toBe('Inbox')
+  })
+})
+
+describe('INBOX_FOLDER がスラッシュのみでも不正キーにならない (#415)', () => {
+  it('テキストクリップ: /// でも Inbox/ 配下に保存される', async () => {
+    const res = await app.request(
+      'http://example.com/clip',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          text: 'slash only folder',
+          title: 'slash-only',
+        }),
+      },
+      { ...env, INBOX_FOLDER: '///', VAULT_PREFIX: 'MyVault/' },
+      { waitUntil() {} } as unknown as ExecutionContext,
+    )
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { path: string }
+    expect(json.path.startsWith('MyVault/Inbox/')).toBe(true)
+    expect(json.path).not.toContain('//')
   })
 })
 

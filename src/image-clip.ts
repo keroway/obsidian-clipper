@@ -24,7 +24,7 @@ import {
   sha1HexBytes,
   writeUrlIndexCAS,
 } from './url-index'
-import { resolveVaultPrefix } from './vault-path'
+import { resolveFolder, resolveVaultPrefix } from './vault-path'
 
 // 警告ログに載せてよい例外情報は許可した標準エラー種別名だけ。Error.name は
 // 任意文字列を設定できるため、それ以外は 'unknown' に丸める (ADR 0012, #373)。
@@ -94,11 +94,8 @@ export async function saveImageClip(
     throw new HTTPException(415, { message: 'unsupported image type' })
   }
 
-  const folder = (env.INBOX_FOLDER || 'Inbox').replace(/^\/+|\/+$/g, '')
-  const attachmentsFolder = (env.ATTACHMENTS_FOLDER || 'Attachments').replace(
-    /^\/+|\/+$/g,
-    '',
-  )
+  const folder = resolveFolder(env.INBOX_FOLDER, 'Inbox')
+  const attachmentsFolder = resolveFolder(env.ATTACHMENTS_FOLDER, 'Attachments')
   const prefix = resolveVaultPrefix(env.VAULT_PREFIX)
   const indexKey = `${prefix}${folder}/.index/urls.json`
 
