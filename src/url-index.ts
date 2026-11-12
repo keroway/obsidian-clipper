@@ -75,6 +75,9 @@ export async function readUrlIndex(
 ): Promise<ReadResult> {
   const obj = await vault.get(key)
   if (!obj) return { index: {} }
+  // 本文の取得失敗は破損ではなくストレージエラー。try の外で await して例外を
+  // 呼び出し元へ伝播させ、writeUrlIndexCAS の storage-error 経路に乗せる (#419)。
+  const bytes = await obj.arrayBuffer()
   let parsed: unknown
   try {
     // obj.json() は不正 UTF-8 を U+FFFD に置換して通してしまうため、生バイトを
@@ -82,7 +85,7 @@ export async function readUrlIndex(
     const text = new TextDecoder('utf-8', {
       fatal: true,
       ignoreBOM: true,
-    }).decode(await obj.arrayBuffer())
+    }).decode(bytes)
     parsed = JSON.parse(text)
   } catch (err) {
     console.warn(
