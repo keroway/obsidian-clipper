@@ -1079,6 +1079,44 @@ describe('readUrlIndex', () => {
     }
   })
 
+  it('不正 UTF-8 を含む index は corrupted 扱いで CAS 書き込みをスキップする (#417)', async () => {
+    const key = 'test-read-index-invalid-utf8.json'
+    const raw = new TextEncoder().encode(
+      JSON.stringify({
+        a: { path: 'Inbox/X.md', createdAt: '2026-11-12T00:00:00+09:00' },
+      }),
+    )
+    raw[raw.indexOf(0x58)] = 0xff
+    await env.VAULT.put(key, raw)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const read = await readUrlIndex(env.VAULT, key)
+    expect(read.corrupted).toBe(true)
+    expect(read.index).toEqual({})
+
+    const w = await writeUrlIndexCAS(env.VAULT, key, (idx) => {
+      idx.b = { path: 'Inbox/y.md', createdAt: '2026-11-12T00:00:00+09:00' }
+    })
+    expect(w).toEqual({ written: false, reason: 'corrupted' })
+    const after = await env.VAULT.get(key)
+    expect(
+      new Uint8Array((await after?.arrayBuffer()) ?? new ArrayBuffer(0)),
+    ).toEqual(raw)
+    warnSpy.mockRestore()
+  })
+
+  it('正常な U+FFFD・日本語・絵文字を含む index は拒否しない (#417)', async () => {
+    const key = 'test-read-index-valid-fffd.json'
+    const index = {
+      a: { path: 'Inbox/日本語😀�.md', createdAt: '2026-11-12T00:00:00+09:00' },
+    }
+    await env.VAULT.put(key, JSON.stringify(index))
+
+    const { index: got, corrupted } = await readUrlIndex(env.VAULT, key)
+    expect(corrupted).toBeUndefined()
+    expect(got).toEqual(index)
+  })
+
   it('accepts a well-formed UrlIndex', async () => {
     const key = 'test-read-index-valid.json'
     await env.VAULT.put(
@@ -1110,7 +1148,7 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
     const vault = {
       get: async () => ({
         etag: 'x',
-        json: async () => {
+        arrayBuffer: async () => {
           throw new SyntaxError(SENTINEL)
         },
       }),
@@ -1125,7 +1163,10 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
   it('readUrlIndex: スキーマ外', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const vault = {
-      get: async () => ({ etag: 'x', json: async () => [] }),
+      get: async () => ({
+        etag: 'x',
+        arrayBuffer: async () => new TextEncoder().encode('[]').buffer,
+      }),
     } as unknown as R2Bucket
     await readUrlIndex(vault, KEY)
     expect(warnSpy).toHaveBeenCalled()
@@ -1136,7 +1177,10 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
   it('writeUrlIndexCAS: 破損スキップ・ストレージ例外', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const corruptVault = {
-      get: async () => ({ etag: 'x', json: async () => [] }),
+      get: async () => ({
+        etag: 'x',
+        arrayBuffer: async () => new TextEncoder().encode('[]').buffer,
+      }),
     } as unknown as R2Bucket
     await writeUrlIndexCAS(corruptVault, KEY, () => {})
     const throwingVault = {
@@ -1161,7 +1205,7 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
     const readVault = {
       get: async () => ({
         etag: 'mock',
-        json: async () => {
+        arrayBuffer: async () => {
           throw custom()
         },
       }),
@@ -1188,9 +1232,11 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
       get: async () => {
         gets++
         // 1-2 回目は正常 (競合させる)、3 回目で破損
-        return gets <= 2
-          ? { etag: 'x', json: async () => ({}) }
-          : { etag: 'x', json: async () => [] }
+        const body = gets <= 2 ? '{}' : '[]'
+        return {
+          etag: 'x',
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer,
+        }
       },
       put: async () => null,
     } as unknown as R2Bucket

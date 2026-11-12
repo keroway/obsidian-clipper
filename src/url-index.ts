@@ -77,7 +77,13 @@ export async function readUrlIndex(
   if (!obj) return { index: {} }
   let parsed: unknown
   try {
-    parsed = await obj.json()
+    // obj.json() は不正 UTF-8 を U+FFFD に置換して通してしまうため、生バイトを
+    // fatal デコードして不正バイトを破損扱いにする (#417)。BOM は JSON として不正なので残す。
+    const text = new TextDecoder('utf-8', {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(await obj.arrayBuffer())
+    parsed = JSON.parse(text)
   } catch (err) {
     console.warn(
       `readUrlIndex: failed to parse index as JSON (${safeErrorName(err)})`,
