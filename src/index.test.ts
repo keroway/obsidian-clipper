@@ -1148,9 +1148,8 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
     const vault = {
       get: async () => ({
         etag: 'x',
-        arrayBuffer: async () => {
-          throw new SyntaxError(SENTINEL)
-        },
+        arrayBuffer: async () =>
+          new TextEncoder().encode(`{${SENTINEL}`).buffer,
       }),
     } as unknown as R2Bucket
     await readUrlIndex(vault, KEY)
@@ -1210,8 +1209,8 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
         },
       }),
     } as unknown as R2Bucket
-    const read = await readUrlIndex(readVault, KEY)
-    expect(read.corrupted).toBe(true)
+    const w2 = await writeUrlIndexCAS(readVault, KEY, () => {})
+    expect(w2.reason).toBe('storage-error')
     const writeVault = {
       get: async () => {
         throw custom()
@@ -1222,6 +1221,30 @@ describe('url-index 警告ログに Vault パス・例外メッセージを載�
     expect(w.reason).toBe('storage-error')
     expect(warned(warnSpy)).not.toContain('PrivateCustomerToken')
     expect(warned(warnSpy)).toContain('(unknown)')
+    warnSpy.mockRestore()
+  })
+
+  it('本文読み取り失敗は corrupted ではなく storage-error (#419)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const err of [new Error('x'), new TypeError('x')]) {
+      let puts = 0
+      const vault = {
+        get: async () => ({
+          etag: 'x',
+          arrayBuffer: async () => {
+            throw err
+          },
+        }),
+        put: async () => {
+          puts++
+          return {}
+        },
+      } as unknown as R2Bucket
+      await expect(readUrlIndex(vault, KEY)).rejects.toBe(err)
+      const w = await writeUrlIndexCAS(vault, KEY, () => {})
+      expect(w).toEqual({ written: false, reason: 'storage-error' })
+      expect(puts).toBe(0)
+    }
     warnSpy.mockRestore()
   })
 
