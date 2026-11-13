@@ -340,7 +340,7 @@ Worker は `Content-Type` とボディの内容によって 3 種類の入力 (A
 | `note` | `string` | いいえ | ユーザーメモ。`> [!note]` callout として保存されます (`MAX_TEXT_CLIP_BYTES` まで; #178)。 |
 | `tags` | `string[]` | いいえ | 追加タグ。`clipped`、allowlist タグ、任意の LLM タグと統合されます (100 件まで; #237)。 |
 
-JSON リクエストボディ全体の上限は `6 × MAX_TEXT_CLIP_BYTES + 64 KiB` で、`Content-Length` が無くても読み取り中に `413` で拒否されます (#237)。
+JSON リクエストボディ全体の上限は `36 × MAX_TEXT_CLIP_BYTES + 64 KiB` (6 フィールド × `\uXXXX` エスケープによる最大 6 倍の膨張を見込んだ受信前の上限) で、`Content-Length` が無くても読み取り中に `413` で拒否されます (#237, #337)。解析後の各フィールドには引き続き `MAX_TEXT_CLIP_BYTES` が適用されます。
 
 `source: web-clip` frontmatter で `INBOX_FOLDER` 配下に保存されます。
 
