@@ -340,7 +340,7 @@ branches on `Content-Type` and body content to accept three kinds of input
 | `note` | `string` | No | User note. Saved as a `> [!note]` callout (up to `MAX_TEXT_CLIP_BYTES`; #178). |
 | `tags` | `string[]` | No | Additional tags merged with `clipped`, allowlist tags, and optional LLM tags (up to 100 entries; #237). |
 
-The whole JSON request body is capped at `6 × MAX_TEXT_CLIP_BYTES + 64 KiB` and rejected with `413` while reading, even without `Content-Length` (#237).
+The whole JSON request body is capped at `36 × MAX_TEXT_CLIP_BYTES + 64 KiB` (6 fields × up to 6x expansion from `\uXXXX` escapes; a pre-parse limit) and rejected with `413` while reading, even without `Content-Length` (#237, #337). Each parsed field is still limited to `MAX_TEXT_CLIP_BYTES`.
 
 Saved with `source: web-clip` frontmatter, under `INBOX_FOLDER`.
 
