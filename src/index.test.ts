@@ -4169,7 +4169,7 @@ describe('POST /clip - auto tagging', () => {
       })
       expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
       expect(
-        notified.some((b) => b.includes(indexSkipMessage('corrupted', ''))),
+        notified.some((b) => b.includes(indexSkipMessage('corrupted', 'url'))),
         `index 破損の通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
 
@@ -4235,10 +4235,15 @@ describe('POST /clip - auto tagging', () => {
       })
       expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
       expect(
-        notified.some((b) => b.includes(indexSkipMessage('storage-error', ''))),
+        notified.some((b) =>
+          b.includes(indexSkipMessage('storage-error', 'url')),
+        ),
         `ストレージエラーの通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
       expect(notified.some((b) => b.includes('壊れている'))).toBe(false)
+      // #423: 通知に Vault パス (Inbox/ やファイル名) を含めない
+      expect(notified.some((b) => b.includes('Inbox/'))).toBe(false)
+      expect(notified.some((b) => b.includes('.md'))).toBe(false)
     } finally {
       testEnv.NOTIFY_WEBHOOK_URL = original
       warnSpy.mockRestore()

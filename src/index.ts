@@ -405,7 +405,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     c.executionCtx.waitUntil(
       notifyWebhook(
         c.env.NOTIFY_WEBHOOK_URL,
-        indexSkipMessage(indexSkipReason, key),
+        indexSkipMessage(indexSkipReason, 'url'),
       ),
     )
   }

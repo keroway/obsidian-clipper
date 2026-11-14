@@ -230,7 +230,7 @@ export async function saveImageClip(
             waitUntil(
               notifyWebhook(
                 env.NOTIFY_WEBHOOK_URL,
-                `[obsidian-clipper] 画像は保存済みですが埋め込みノートの保存に失敗しました: ${existingPath}`,
+                `[obsidian-clipper] 画像は保存済みですが埋め込みノートの保存に失敗しました`,
               ),
             )
           }
@@ -267,7 +267,7 @@ export async function saveImageClip(
     waitUntil(
       notifyWebhook(
         env.NOTIFY_WEBHOOK_URL,
-        indexSkipMessage(indexSkipReason, key),
+        indexSkipMessage(indexSkipReason, 'image'),
       ),
     )
   }
@@ -290,7 +290,7 @@ export async function saveImageClip(
         waitUntil(
           notifyWebhook(
             env.NOTIFY_WEBHOOK_URL,
-            `[obsidian-clipper] 画像は保存済みですが埋め込みノートの保存に失敗しました: ${key}`,
+            `[obsidian-clipper] 画像は保存済みですが埋め込みノートの保存に失敗しました`,
           ),
         )
       }
