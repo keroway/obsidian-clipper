@@ -30,6 +30,12 @@
       "groupName": null
     },
     {
+      "description": "@cloudflare/vitest-pool-workers が vitest 5 に未対応（peer ^4.1.0）。対応版が出るまで vitest の major を保留（#392）",
+      "matchPackageNames": ["vitest"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "GitHub Actions の SHA / バージョン更新もまとめて 1 PR に",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
