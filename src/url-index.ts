@@ -3,15 +3,17 @@ export type UrlIndex = Record<string, IndexEntry>
 
 // writeUrlIndexCAS が書き込みをスキップしたときの通知文言 (#145)。原因ごとに
 // 文言を分け、ストレージ書き込み失敗を JSON 破損と誤って断定しないようにする。
+// Vault パス・タイトル・元画像名は通知先へ渡さず、クリップ種別だけを載せる (#423)。
 export function indexSkipMessage(
   reason: 'corrupted' | 'storage-error' | undefined,
-  path: string,
+  kind: 'url' | 'image',
 ): string {
   const detail =
     reason === 'corrupted'
       ? 'urls.json が壊れているため'
       : 'urls.json への書き込みに失敗したため'
-  return `[obsidian-clipper] ${detail}重複検知インデックスの更新をスキップしました: ${path}`
+  const label = kind === 'image' ? '画像クリップ' : 'URL クリップ'
+  return `[obsidian-clipper] ${detail}重複検知インデックスの更新をスキップしました (${label})`
 }
 
 // バイト列の SHA-1 hex ダイジェスト。画像等バイナリの content hash 重複検知に使う (ADR 0011)。
