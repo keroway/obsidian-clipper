@@ -5547,6 +5547,36 @@ describe('POST /clip - image clip', () => {
     expect(content).toContain('My Screenshot')
   })
 
+  it('ATTACHMENTS_FOLDER に Wiki リンク特殊文字があり埋め込み指定なら画像 PUT 前に 400 (#426)', async () => {
+    const testEnv = env as typeof env & { ATTACHMENTS_FOLDER?: string }
+    const original = testEnv.ATTACHMENTS_FOLDER
+    testEnv.ATTACHMENTS_FOLDER = 'Screens#shots'
+    const putSpy = vi.spyOn(env.VAULT, 'put')
+    try {
+      const res = await postImage(
+        { embed: '1' },
+        'wikilink-special-426.png',
+        pngBytes(77),
+      )
+      expect(res.status).toBe(400)
+      const json = (await res.json()) as { ok: boolean; error: string }
+      expect(json.ok).toBe(false)
+      expect(json.error).toContain('wiki links')
+      expect(putSpy).not.toHaveBeenCalled()
+
+      // 埋め込みなしなら従来どおり保存できる (リンクを作らないため)
+      const plain = await postImage(
+        {},
+        'wikilink-special-426b.png',
+        pngBytes(78),
+      )
+      expect(plain.status).toBe(200)
+    } finally {
+      testEnv.ATTACHMENTS_FOLDER = original
+      putSpy.mockRestore()
+    }
+  })
+
   it('tags の要素数が上限を超える multipart は画像 PUT 前に 413 を返す (#274)', async () => {
     const putSpy = vi.spyOn(env.VAULT, 'put')
     const tooMany = Array.from(

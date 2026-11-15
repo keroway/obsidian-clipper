@@ -61,6 +61,8 @@ export type ImageClipResult =
       tags?: string[]
     }
 
+const WIKILINK_SPECIAL_RE = /[#^|[\]]/
+
 // workers-types の FormData#get() は string | null 固定で File を表現できないため、
 // 実行時に string でないことを確認した上で File として扱う。
 function parseImageFile(form: FormData): File {
@@ -166,6 +168,18 @@ export async function saveImageClip(
   }
   const manualTags = rawTags.map((t) => t.trim()).filter(Boolean)
 
+  // Wiki リンクで特別な意味を持つ文字 (# ^ | [ ]) を含むパスは、埋め込みリンクが
+  // 見出し/ブロック参照/別名として解釈され壊れる (#426)。黙って別名へ変えず拒否する。
+  const assertEmbeddable = (target: string): void => {
+    if (WIKILINK_SPECIAL_RE.test(target)) {
+      throw new HTTPException(400, {
+        message:
+          'attachments folder contains characters not allowed in wiki links (# ^ | [ ])',
+      })
+    }
+  }
+  if (wantEmbed) assertEmbeddable(attachmentsFolder)
+
   const buildEmbedNote = async (
     now: Date,
     embedTarget: string,
@@ -206,6 +220,7 @@ export async function saveImageClip(
         const embedTarget = existingPath.startsWith(prefix)
           ? existingPath.slice(prefix.length)
           : existingPath
+        assertEmbeddable(embedTarget)
         // 画像は保存済みなので、ノート PUT の失敗は 500 にせず部分成功として
         // 既存画像の path 付きで返す (#257)。
         try {
