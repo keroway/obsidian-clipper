@@ -1117,6 +1117,42 @@ describe('readUrlIndex', () => {
     expect(got).toEqual(index)
   })
 
+  it('JSON エスケープ由来の孤立サロゲートを含む index は corrupted 扱いで書き込まない (#430)', async () => {
+    for (const [label, esc] of [
+      ['high', '\\ud800'],
+      ['low', '\\udc00'],
+    ]) {
+      const key = `test-read-index-lone-surrogate-${label}.json`
+      const raw = `{"a":{"path":"Inbox/${esc}.md","createdAt":"2026-11-16T00:00:00+09:00"}}`
+      await env.VAULT.put(key, raw)
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const read = await readUrlIndex(env.VAULT, key)
+      expect(read.corrupted, label).toBe(true)
+      expect(read.index, label).toEqual({})
+
+      const w = await writeUrlIndexCAS(env.VAULT, key, (idx) => {
+        idx.b = { path: 'Inbox/y.md', createdAt: '2026-11-16T00:00:00+09:00' }
+      })
+      expect(w, label).toEqual({ written: false, reason: 'corrupted' })
+      const after = await env.VAULT.get(key)
+      expect(await after?.text(), label).toBe(raw)
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('正常なサロゲートペア (絵文字) のエスケープ表記は拒否しない (#430)', async () => {
+    const key = 'test-read-index-escaped-pair.json'
+    await env.VAULT.put(
+      key,
+      '{"a":{"path":"Inbox/\\ud83d\\ude00.md","createdAt":"2026-11-16T00:00:00+09:00"}}',
+    )
+
+    const { index, corrupted } = await readUrlIndex(env.VAULT, key)
+    expect(corrupted).toBeUndefined()
+    expect(index.a?.path).toBe('Inbox/😀.md')
+  })
+
   it('accepts a well-formed UrlIndex', async () => {
     const key = 'test-read-index-valid.json'
     await env.VAULT.put(
