@@ -7,8 +7,33 @@ const CRLF = [0x0d, 0x0a]
 const HEADER_END = [0x0d, 0x0a, 0x0d, 0x0a]
 
 function boundaryOf(contentType: string): string | null {
-  const m = /;\s*boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType)
-  return m ? (m[1] ?? m[2] ?? null) : null
+  // 引用符 (とエスケープ) を考慮して ';' で分割し、パラメータ名が boundary のものだけを採る。
+  // 他パラメータの引用符内にある "boundary=" は実境界ではない (#432)。
+  const params: string[] = []
+  let cur = ''
+  let inQuote = false
+  for (let i = 0; i < contentType.length; i++) {
+    const ch = contentType[i] as string
+    if (inQuote && ch === '\\' && i + 1 < contentType.length) {
+      cur += ch + contentType[++i]
+      continue
+    }
+    if (ch === '"') inQuote = !inQuote
+    if (ch === ';' && !inQuote) {
+      params.push(cur)
+      cur = ''
+      continue
+    }
+    cur += ch
+  }
+  params.push(cur)
+  for (const p of params.slice(1)) {
+    const m = /^\s*boundary\s*=\s*(?:"((?:[^"\\]|\\.)+)"|([^\s;]+))\s*$/i.exec(
+      p,
+    )
+    if (m) return (m[1] ?? m[2] ?? '').replace(/\\(.)/g, '$1') || null
+  }
+  return null
 }
 
 function indexOfBytes(

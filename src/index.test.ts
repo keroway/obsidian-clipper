@@ -5178,6 +5178,7 @@ describe('POST /clip - image clip', () => {
     const postRaw = (
       titleBytes: number[],
       titleHeaders = 'Content-Disposition: form-data; name="title"',
+      contentType = 'multipart/form-data; boundary=local',
     ) => {
       const parts: Uint8Array[] = [
         enc.encode(
@@ -5199,11 +5200,29 @@ describe('POST /clip - image clip', () => {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${env.SHARED_SECRET}`,
-          'Content-Type': 'multipart/form-data; boundary=local',
+          'Content-Type': contentType,
         },
         body,
       })
     }
+
+    it('他パラメータの引用符内の boundary= を実境界と誤認せず 400 で拒否する (#432)', async () => {
+      const res = await postRaw(
+        [...enc.encode('before'), 0xff],
+        'Content-Disposition: form-data; name="title"',
+        'multipart/form-data; extra="; boundary=fake"; boundary=local',
+      )
+      expect(res.status).toBe(400)
+    })
+
+    it('引用符付きの実 boundary も解釈して検証する (#432)', async () => {
+      const res = await postRaw(
+        [...enc.encode('before'), 0xff],
+        'Content-Disposition: form-data; name="title"',
+        'multipart/form-data; boundary="local"',
+      )
+      expect(res.status).toBe(400)
+    })
 
     it('title に不正な UTF-8 (0xFF) があれば 400 で拒否する', async () => {
       const res = await postRaw([
