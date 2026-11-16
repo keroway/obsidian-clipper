@@ -62,8 +62,17 @@ function isValidUrlIndex(value: unknown): value is UrlIndex {
       typeof entry === 'object' &&
       entry !== null &&
       typeof (entry as IndexEntry).path === 'string' &&
-      typeof (entry as IndexEntry).createdAt === 'string',
+      typeof (entry as IndexEntry).createdAt === 'string' &&
+      !hasLoneSurrogate((entry as IndexEntry).path) &&
+      !hasLoneSurrogate((entry as IndexEntry).createdAt),
   )
+}
+
+// JSON の \uD800 等のエスケープは生バイトとしては正常な UTF-8 のため fatal デコードを
+// 通過するが、UTF-8 往復で U+FFFD に変質する。u フラグ付き \p{Surrogate} は
+// 対になっていない孤立サロゲートだけに一致する (正常なサロゲートペアは 1 コードポイント) (#430)。
+function hasLoneSurrogate(text: string): boolean {
+  return /\p{Surrogate}/u.test(text)
 }
 
 // index を etag と共に読む。CAS 書き込みの前提となる現在の etag を保持するため。
