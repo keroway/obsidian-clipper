@@ -65,7 +65,7 @@ The Worker accepts a URL from a shortcut, bookmarklet, or script; normalizes the
 | Package manager | [Bun 1.x](https://bun.sh/) or npm | Dependency installation and scripts |
 | CLI | [Wrangler 4.x](https://developers.cloudflare.com/workers/wrangler/) | Local development, deployment, and secret management |
 | Object storage | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Obsidian vault storage shared with Remotely Save |
-| Default LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/llama-3.1-8b-instruct`) | Optional summaries |
+| Default LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/llama-3.1-8b-instruct-fp8`) | Optional summaries |
 | Optional LLM | [Anthropic Claude Haiku 4.5](https://docs.anthropic.com/) | Alternative summary provider |
 | Content extraction | [Jina Reader](https://jina.ai/reader/) | URL to Markdown conversion |
 | Vault sync | [Remotely Save](https://github.com/remotely-save/remotely-save) | Obsidian to R2 synchronization |
@@ -407,7 +407,7 @@ priority order before truncating: `clipped` → hostname allowlist tags → manu
 request → LLM-generated tags (only when no manual tags were supplied). If you pass many manual
 tags, later ones may be silently dropped once the cap is reached; the final list is echoed back
 in the `/clip` response as `tags` so you can check for truncation.
-| `SUMMARY_MODEL` | `"@cf/meta/llama-3.1-8b-instruct"` | Workers AI model. |
+| `SUMMARY_MODEL` | `"@cf/meta/llama-3.1-8b-instruct-fp8"` | Workers AI model. |
 | `SUMMARY_PROVIDER` | `"workers-ai"` | `"workers-ai"` or `"anthropic"`. |
 | `ANTHROPIC_MODEL` | `"claude-haiku-4-5-20251001"` | Anthropic model ID. |
 

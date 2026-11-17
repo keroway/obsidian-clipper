@@ -50,7 +50,7 @@
     // 既定ルール (zenn/qiita/note/hatena/x/github/youtube/slides) に追記マージされる。
     "AUTO_TAGS_ALLOWLIST": "",
     // 要約に使う Workers AI モデル。日本語品質に不満が出たら別モデルへ
-    "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct",
+    "SUMMARY_MODEL": "@cf/meta/llama-3.1-8b-instruct-fp8",
     // 要約プロバイダ。"workers-ai" (既定) または "anthropic"。
     // "anthropic" を選ぶ場合は ANTHROPIC_API_KEY を wrangler secret put で投入する。
     "SUMMARY_PROVIDER": "workers-ai",
