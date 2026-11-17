@@ -2327,7 +2327,7 @@ describe('summarizeWithProvider', () => {
     const run = vi.fn(async () => ({ response }))
     return {
       env: {
-        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct-fp8',
         AI: { run },
       } as unknown as Bindings,
       run,
@@ -2428,7 +2428,7 @@ describe('summarizeWithProvider', () => {
     async (_label, response) => {
       const run = vi.fn(async () => ({ response }))
       const testEnv = {
-        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct-fp8',
         AI: { run },
       } as unknown as Bindings
 
@@ -2737,7 +2737,7 @@ describe('generateTags', () => {
     const run = vi.fn(async () => ({ response }))
     return {
       env: {
-        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct-fp8',
         AI: { run },
       } as unknown as Bindings,
       run,
@@ -2885,7 +2885,7 @@ describe('generateTags', () => {
     async (_label, response) => {
       const run = vi.fn(async () => ({ response }))
       const testEnv = {
-        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct-fp8',
         AI: { run },
       } as unknown as Bindings
 
@@ -2908,7 +2908,7 @@ describe('Workers AI の待機期限（#249）', () => {
     const run = vi.fn(() => new Promise<never>(() => {}))
     return {
       env: {
-        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+        SUMMARY_MODEL: '@cf/meta/llama-3.1-8b-instruct-fp8',
         AI: { run },
       } as unknown as Bindings,
       run,

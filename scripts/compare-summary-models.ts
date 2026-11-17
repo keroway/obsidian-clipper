@@ -46,7 +46,7 @@ declare const process: {
 // 他モデル (Qwen / Gemma 等) を試すときは、必ず公式一覧で現行 ID を確認してから
 // `--models` で渡すこと: https://developers.cloudflare.com/workers-ai/models/
 const DEFAULT_CANDIDATE_MODELS = [
-  '@cf/meta/llama-3.1-8b-instruct', // 現行既定。低コスト・高速で #16 の採用モデル
+  '@cf/meta/llama-3.1-8b-instruct-fp8', // 現行既定。低コスト・高速で #16 の採用モデル
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast', // 大型・高品質だが 5〜7 倍遅くコスト高
   '@cf/mistralai/mistral-small-3.1-24b-instruct', // 中型・多言語
 ]

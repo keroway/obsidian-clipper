@@ -65,7 +65,7 @@ Worker はショートカット、ブックマークレット、スクリプト�
 | パッケージマネージャ | [Bun 1.x](https://bun.sh/) または npm | 依存導入とスクリプト実行 |
 | CLI | [Wrangler 4.x](https://developers.cloudflare.com/workers/wrangler/) | ローカル開発、デプロイ、Secrets 管理 |
 | オブジェクトストレージ | [Cloudflare R2](https://developers.cloudflare.com/r2/) | Remotely Save と共用する Vault ストレージ |
-| 既定の LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/llama-3.1-8b-instruct`) | 任意の要約生成 |
+| 既定の LLM | [Workers AI](https://developers.cloudflare.com/workers-ai/) (`@cf/meta/llama-3.1-8b-instruct-fp8`) | 任意の要約生成 |
 | 任意の LLM | [Anthropic Claude Haiku 4.5](https://docs.anthropic.com/) | 代替の要約プロバイダ |
 | 本文抽出 | [Jina Reader](https://jina.ai/reader/) | URL から Markdown への変換 |
 | Vault 同期 | [Remotely Save](https://github.com/remotely-save/remotely-save) | Obsidian と R2 の同期 |
@@ -404,7 +404,7 @@ Jina Reader や要約の失敗は、URL クリップにおいてもエラース�
 | `ENABLE_SUMMARY` | `"true"` | 要約を有効にします。 |
 | `ENABLE_AUTO_TAGS` | `"false"` | 手動タグがない場合に LLM タグを生成します。旧名 `ENABLE_AUTO_TAG` も受け付けます。 |
 | `AUTO_TAGS_ALLOWLIST` | `""` | 追加の固定ホスト名タグ。例: `zenn.dev:zenn,github.com:github`。 |
-| `SUMMARY_MODEL` | `"@cf/meta/llama-3.1-8b-instruct"` | Workers AI のモデル。 |
+| `SUMMARY_MODEL` | `"@cf/meta/llama-3.1-8b-instruct-fp8"` | Workers AI のモデル。 |
 | `SUMMARY_PROVIDER` | `"workers-ai"` | `"workers-ai"` または `"anthropic"`。 |
 | `ANTHROPIC_MODEL` | `"claude-haiku-4-5-20251001"` | Anthropic のモデル ID。 |
 

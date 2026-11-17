@@ -93,7 +93,8 @@ export async function summarizeWithProvider(
   md: string,
   title: string | undefined,
 ): Promise<string> {
-  const workersAiModel = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct'
+  const workersAiModel =
+    env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8'
   if (env.SUMMARY_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
     console.warn(
       'SUMMARY_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set, falling back to workers-ai',
@@ -209,7 +210,7 @@ export async function generateTags(
       )
     }
   }
-  const model = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct'
+  const model = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8'
   const r = (await withWorkersAiTimeout(
     env.AI.run(
       model as Parameters<Ai['run']>[0],

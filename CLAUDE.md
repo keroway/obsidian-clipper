@@ -51,7 +51,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. `POST /clip` を Hono で受ける。`bearerAuth` で `SHARED_SECRET` を検証、CORS は `*` (ブックマークレット / iOS ショートカットから叩く前提)。
 2. `normalizeUrl()` で UTM / `gclid` / X の `?s` `?t` 等を除去し、`mobile.twitter.com` と `twitter.com` を `x.com` に揃える。許可リストは `TRACKING_PARAMS`。
 3. `https://r.jina.ai/<URL>` で本文 Markdown を取得。`JINA_API_KEY` (secret) が設定されていれば `Authorization: Bearer` を付与して無料枠の rate limit を緩和する。未設定でも従来通り無認証で動作するが、初回から 429 に当たりやすいので推奨。
-4. `ENABLE_SUMMARY === 'true'` かつ本文 200 文字超なら `summarize()` で Workers AI (`SUMMARY_MODEL`, 既定 `@cf/meta/llama-3.1-8b-instruct`) に投げる。
+4. `ENABLE_SUMMARY === 'true'` かつ本文 200 文字超なら `summarize()` で Workers AI (`SUMMARY_MODEL`, 既定 `@cf/meta/llama-3.1-8b-instruct-fp8`) に投げる。
 5. JST タイムスタンプ + サニタイズ済みタイトルで `YYYY-MM-DD_HHMMSS_<slug>.md` を組み立て、`${VAULT_PREFIX}${INBOX_FOLDER}/${filename}` を key として `c.env.VAULT.put`。
 6. Obsidian 側は Remotely Save が R2 を pull することでノートを取り込む (Worker は Obsidian に直接触らない)。
 
