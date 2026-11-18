@@ -1,0 +1,15 @@
+# osv-scanner の無視リスト。設定形式: https://google.github.io/osv-scanner/configuration/
+#
+# 修正版が存在せず、実行時に到達しない (devDependency のみ) 既知脆弱性だけを対象とする。
+# 追加時は必ず出典と再評価条件を reason に書く。期限切れで再び検知されるようにしてある。
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-31
+reason = """
+picomatch <= 4.0.7 の ReDoS (extglob)。2026-11-18 時点で修正版なし (npm 最新 4.0.7)。
+経路は vitest -> vite -> tinyglobby -> picomatch の開発時のみの推移的依存で、
+Worker の本番バンドルには含まれず、信頼できない入力も渡らない。
+再評価: picomatch の修正版が出たら override で上げてこのエントリを削除する。
+期限 (2026-12-31) までに修正版が出なければ状況を見直す。
+"""
