@@ -22,3 +22,4 @@
 | [0010](0010-url-index-robustness.md) | URL インデックスの整合性強化と重複判定の仕様変更 | Accepted |
 | [0011](0011-non-url-clip.md) | URL 以外の入力 (Markdown / テキスト / 画像) の受け入れ | Accepted |
 | [0012](0012-observability.md) | 観測性 (クリップ成否と失敗種別の把握) | Accepted |
+| [0013](0013-model-deprecation-silent-failure.md) | 要約モデル廃止による無音の要約欠落と再発防止 | Accepted |

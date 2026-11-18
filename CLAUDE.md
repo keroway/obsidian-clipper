@@ -58,6 +58,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **重複検知** (`src/url-index.ts`, ADR 0003 / 0010): `Inbox/.index/urls.json` に `sha1(url) → { path, createdAt }` を保持。同じ正規化済み URL が再クリップされ、**かつ index が指すファイルが R2 上に実在する**場合のみ `duplicate: true` を返す (`VAULT.head()` で確認)。Inbox から移動/削除済みなら再クリップを許可。index 更新は R2 の条件付き PUT (`onlyIf`) による楽観ロック (`writeUrlIndexCAS`) で、同時クリップの lost update を防ぐ。`?refresh=1` で重複を無視して上書き保存。
 
 **失敗ポリシー**: 本文取得失敗 / 要約失敗のどちらも握り潰して 200 を返す。Jina 失敗時は `fetchErr` を本文セクションに残し、要約失敗は `console.warn` のみ。URL とユーザメモだけでも保存されるのが MVP の合意なので、ここで HTTPException を投げないこと。
+握り潰す設計なので、モデル廃止などで要約が全件失敗しても**クライアントからは成功に見える**。`NOTIFY_WEBHOOK_URL` を必ず設定し、要約欠落を疑うときは `wrangler tail` で `summarize failed` を見る (ADR 0013)。
 
 **バインディング** (`wrangler.jsonc`):
 
