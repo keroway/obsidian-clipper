@@ -130,5 +130,11 @@ export function parseTagList(s: string): string[] {
 
 // ENABLE_AUTO_TAGS (新) または ENABLE_AUTO_TAG (旧・後方互換) のいずれかが 'true' なら有効。
 export function autoTagsEnabled(env: Bindings): boolean {
-  return env.ENABLE_AUTO_TAGS === 'true' || env.ENABLE_AUTO_TAG === 'true'
+  return isTrueVar(env.ENABLE_AUTO_TAGS) || isTrueVar(env.ENABLE_AUTO_TAG)
+}
+
+// 真偽値 vars は前後空白と大文字小文字を無視して 'true' のみ真とする (#449)。
+// 'TRUE' / ' true ' が黙って無効扱いになるのを防ぐ。'1' 等は従来どおり偽。
+export function isTrueVar(v: string | undefined): boolean {
+  return v?.trim().toLowerCase() === 'true'
 }

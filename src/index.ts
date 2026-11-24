@@ -56,7 +56,13 @@ import { multipartTextPartsAreValidUtf8 } from './multipart-utf8'
 import { makeSlug, renderNote } from './note'
 import { notifyWebhook } from './notify'
 import { buildClipEvent, type ClipDetails, logClipEvent } from './observe'
-import { autoTagsEnabled, hasValidTag, hostTagsFor, mergeTags } from './tags'
+import {
+  autoTagsEnabled,
+  hasValidTag,
+  hostTagsFor,
+  isTrueVar,
+  mergeTags,
+} from './tags'
 import {
   assertFieldWithinLimit,
   assertTagsWithinLimit,
@@ -317,7 +323,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   // 要約とタグ生成は互いに依存しない (受け入れ条件 #35: タグ生成は手動タグ 0 件のみ判定)。
   const hostTags = hostTagsFor(url, c.env)
   const manualTags = payload.tags ?? []
-  const wantSummary = c.env.ENABLE_SUMMARY === 'true' && articleMd.length > 200
+  const wantSummary = isTrueVar(c.env.ENABLE_SUMMARY) && articleMd.length > 200
   const wantTags =
     autoTagsEnabled(c.env) && !hasValidTag(manualTags) && articleMd.length > 200
 
@@ -328,7 +334,7 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     c.executionCtx.waitUntil(
       notifyWebhook(
         c.env.NOTIFY_WEBHOOK_URL,
-        `[obsidian-clipper] ${label}プロバイダ縮退: anthropic 失敗のため workers-ai を使用: ${hostname(url)} (${reason})`,
+        `[obsidian-clipper] ${label}プロバイダ縮退: workers-ai を使用:${hostname(url)} (${reason})`,
       ),
     )
   }
