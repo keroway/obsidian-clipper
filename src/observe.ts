@@ -16,6 +16,9 @@ export type ClipDetails = {
   fetchFailed?: boolean
   summaryFailed?: boolean
   tagsFailed?: boolean
+  // Anthropic 失敗で workers-ai に縮退した (#442)。成功しても品質が落ちているので別に記録する。
+  summaryFallback?: boolean
+  tagsFallback?: boolean
   noteFailed?: boolean
 }
 

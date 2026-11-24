@@ -35,8 +35,12 @@ HANDOFF TODO #7 (観測性) のみ未着手で、#227 で起案された。現�
 ```
 { event: 'clip', kind: 'url'|'text'|'image', outcome: 'saved'|'duplicate'|'error',
   status, durationMs, host?, fetchVia?: 'jina'|'browser'|'none',
-  fetchFailed?: boolean, summaryFailed?: boolean, tagsFailed?: boolean }
+  fetchFailed?: boolean, summaryFailed?: boolean, tagsFailed?: boolean,
+  summaryFallback?: boolean, tagsFallback?: boolean }
 ```
+
+`summaryFallback` / `tagsFallback` (#442) は、Anthropic が失敗して workers-ai への縮退が成功したことを示す。
+失敗 (`*Failed`) とは別物で、クリップ応答には載せない。縮退時は `NOTIFY_WEBHOOK_URL` にも分類済みの理由だけを通知する。
 
 理由:
 

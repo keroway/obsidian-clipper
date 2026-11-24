@@ -321,9 +321,24 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
   const wantTags =
     autoTagsEnabled(c.env) && !hasValidTag(manualTags) && articleMd.length > 200
 
+  // Anthropic 失敗→workers-ai フォールバックが成功しても無音にしない (#442)。
+  // 理由は describeLlmError の分類文字列のみ (応答本文は載せない)。
+  const notifyFallback = (label: string, reason: string) => {
+    if (!c.env.NOTIFY_WEBHOOK_URL) return
+    c.executionCtx.waitUntil(
+      notifyWebhook(
+        c.env.NOTIFY_WEBHOOK_URL,
+        `[obsidian-clipper] ${label}プロバイダ縮退: anthropic 失敗のため workers-ai を使用: ${hostname(url)} (${reason})`,
+      ),
+    )
+  }
+
   const [summary, llmTags] = await Promise.all([
     wantSummary
-      ? summarizeWithProvider(c.env, articleMd, articleTitle).catch((e) => {
+      ? summarizeWithProvider(c.env, articleMd, articleTitle, (reason) => {
+          details.summaryFallback = true
+          notifyFallback('要約', reason)
+        }).catch((e) => {
           console.warn('summarize failed', describeLlmError(e))
           details.summaryFailed = true
           if (c.env.NOTIFY_WEBHOOK_URL) {
@@ -338,7 +353,10 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
         })
       : Promise.resolve(''),
     wantTags
-      ? generateTags(c.env, articleMd, articleTitle).catch((e) => {
+      ? generateTags(c.env, articleMd, articleTitle, (reason) => {
+          details.tagsFallback = true
+          notifyFallback('タグ生成', reason)
+        }).catch((e) => {
           console.warn('auto-tag failed', describeLlmError(e))
           details.tagsFailed = true
           // 要約・本文取得と同じく webhook へも通知する。ここだけ
