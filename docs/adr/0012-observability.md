@@ -41,6 +41,9 @@ HANDOFF TODO #7 (観測性) のみ未着手で、#227 で起案された。現�
 
 `summaryFallback` / `tagsFallback` (#442) は、Anthropic が失敗して workers-ai への縮退が成功したことを示す。
 失敗 (`*Failed`) とは別物で、クリップ応答には載せない。縮退時は `NOTIFY_WEBHOOK_URL` にも分類済みの理由だけを通知する。
+設定ミス (#449) も同じ経路に載せる: `ANTHROPIC_API_KEY` 未設定は `api key not set`、`SUMMARY_PROVIDER` が
+`anthropic` / `workers-ai` 以外は `unknown provider`。`SUMMARY_PROVIDER` と真偽値 vars (`ENABLE_SUMMARY` /
+`ENABLE_AUTO_TAGS`) は前後空白・大文字小文字を無視して解釈する (警告ではなく寛容に解釈する方を採用。`1` 等は従来どおり偽)。
 
 理由:
 

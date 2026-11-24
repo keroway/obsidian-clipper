@@ -2348,10 +2348,12 @@ describe('summarizeWithProvider', () => {
   it('warns and falls back to workers-ai when SUMMARY_PROVIDER=anthropic but key is missing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { env: testEnv, run } = workersAiEnv('workers-ai summary')
+    const onFallback = vi.fn()
     const result = await summarizeWithProvider(
       { ...testEnv, SUMMARY_PROVIDER: 'anthropic' } as Bindings,
       'body text',
       'Title',
+      onFallback,
     )
 
     expect(result).toBe('workers-ai summary')
@@ -2359,6 +2361,31 @@ describe('summarizeWithProvider', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringMatching(/ANTHROPIC_API_KEY.*not set/),
     )
+    // #449: 設定ミスも縮退通知の経路 (固定分類の理由) に載せる
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith('api key not set')
+  })
+
+  it('reports unknown SUMMARY_PROVIDER via onFallback, accepts case variants (#449)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { env: testEnv } = workersAiEnv('s')
+    const onFallback = vi.fn()
+    await summarizeWithProvider(
+      { ...testEnv, SUMMARY_PROVIDER: 'claude' } as Bindings,
+      'body text',
+      'Title',
+      onFallback,
+    )
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith('unknown provider')
+
+    // 大文字違いは anthropic として解釈される (キー未設定ならその理由で通知)
+    const onFallback2 = vi.fn()
+    await summarizeWithProvider(
+      { ...testEnv, SUMMARY_PROVIDER: ' Anthropic ' } as Bindings,
+      'body text',
+      'Title',
+      onFallback2,
+    )
+    expect(onFallback2).toHaveBeenCalledExactlyOnceWith('api key not set')
   })
 
   it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
@@ -2765,10 +2792,12 @@ describe('generateTags', () => {
   it('warns and falls back to workers-ai when SUMMARY_PROVIDER=anthropic but key is missing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { env: testEnv, run } = workersAiEnv('tag1, tag2')
+    const onFallback = vi.fn()
     const tags = await generateTags(
       { ...testEnv, SUMMARY_PROVIDER: 'anthropic' } as Bindings,
       'body text',
       'Title',
+      onFallback,
     )
 
     expect(tags).toEqual(['tag1', 'tag2'])
@@ -2776,6 +2805,21 @@ describe('generateTags', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringMatching(/ANTHROPIC_API_KEY.*not set/),
     )
+    // #449: 設定ミスも縮退通知の経路 (固定分類の理由) に載せる
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith('api key not set')
+  })
+
+  it('reports unknown SUMMARY_PROVIDER via onFallback (#449)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { env: testEnv } = workersAiEnv('tag1, tag2')
+    const onFallback = vi.fn()
+    await generateTags(
+      { ...testEnv, SUMMARY_PROVIDER: 'claude' } as Bindings,
+      'body text',
+      'Title',
+      onFallback,
+    )
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith('unknown provider')
   })
 
   it('uses anthropic when SUMMARY_PROVIDER=anthropic and key is present', async () => {
@@ -4437,6 +4481,79 @@ describe('POST /clip - auto tagging', () => {
         `縮退通知が飛んでいない: ${JSON.stringify(notified)}`,
       ).toBe(true)
       expect(JSON.stringify(notified)).not.toContain('LEAK-BODY')
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = saved.notify
+      testEnv.ENABLE_SUMMARY = saved.summary
+      testEnv.SUMMARY_PROVIDER = saved.provider
+      testEnv.ANTHROPIC_API_KEY = saved.key
+      testEnv.AI = saved.ai
+      warnSpy.mockRestore()
+    }
+  })
+
+  /// #449: SUMMARY_PROVIDER=anthropic でキー未設定 (設定ミス) でも、縮退を
+  /// webhook に出す (summaryFallback は構造化イベント側のフラグ)。ENABLE_SUMMARY は大文字違い ('TRUE') も有効。
+  it('notifies the webhook and sets the flag when the anthropic key is missing (#449)', async () => {
+    const testEnv = env as typeof env & {
+      NOTIFY_WEBHOOK_URL?: string
+      ENABLE_SUMMARY?: string
+      SUMMARY_PROVIDER?: string
+      ANTHROPIC_API_KEY?: string
+    }
+    const saved = {
+      notify: testEnv.NOTIFY_WEBHOOK_URL,
+      summary: testEnv.ENABLE_SUMMARY,
+      provider: testEnv.SUMMARY_PROVIDER,
+      key: testEnv.ANTHROPIC_API_KEY,
+      ai: testEnv.AI,
+    }
+    testEnv.AI = {
+      run: async () => ({ response: 'fallback summary' }),
+    } as unknown as typeof testEnv.AI
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response(`Title: T\n\n${'article body text '.repeat(20)}`, {
+          status: 200,
+        })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    testEnv.ENABLE_SUMMARY = 'TRUE'
+    testEnv.SUMMARY_PROVIDER = 'anthropic'
+    testEnv.ANTHROPIC_API_KEY = ''
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/misconfig-449-1',
+        }),
+      })
+      const body = (await res.json()) as {
+        ok: boolean
+        summarized: boolean
+      }
+      expect(body.ok).toBe(true)
+      expect(body.summarized).toBe(true)
+      expect(
+        notified.some(
+          (b) => b.includes('プロバイダ縮退') && b.includes('api key not set'),
+        ),
+        `縮退通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
     } finally {
       testEnv.NOTIFY_WEBHOOK_URL = saved.notify
       testEnv.ENABLE_SUMMARY = saved.summary

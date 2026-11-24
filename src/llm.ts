@@ -88,6 +88,30 @@ async function withWorkersAiTimeout<T>(
   }
 }
 
+// SUMMARY_PROVIDER を解釈する (#449)。前後空白・大文字小文字は無視する。
+// 設定ミス (キー未設定 / 未知のプロバイダ名) は console.warn に加えて onFallback へ
+// 固定分類の理由を渡し、details.*Fallback と webhook 通知に接続する (自由文は載せない: ADR 0012)。
+function resolveProvider(
+  env: Bindings,
+  onFallback?: (reason: string) => void,
+): 'anthropic' | 'workers-ai' {
+  const raw = env.SUMMARY_PROVIDER?.trim().toLowerCase() ?? ''
+  if (raw === '' || raw === 'workers-ai') return 'workers-ai'
+  if (raw === 'anthropic') {
+    if (env.ANTHROPIC_API_KEY) return 'anthropic'
+    console.warn(
+      'SUMMARY_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set, falling back to workers-ai',
+    )
+    onFallback?.('api key not set')
+    return 'workers-ai'
+  }
+  console.warn(
+    'SUMMARY_PROVIDER has an unknown value (expected anthropic or workers-ai), falling back to workers-ai',
+  )
+  onFallback?.('unknown provider')
+  return 'workers-ai'
+}
+
 export async function summarizeWithProvider(
   env: Bindings,
   md: string,
@@ -97,12 +121,8 @@ export async function summarizeWithProvider(
 ): Promise<string> {
   const workersAiModel =
     env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8'
-  if (env.SUMMARY_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
-    console.warn(
-      'SUMMARY_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set, falling back to workers-ai',
-    )
-  }
-  if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
+  const resolved = resolveProvider(env, onFallback)
+  if (resolved === 'anthropic' && env.ANTHROPIC_API_KEY) {
     const anthropicModel = env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL
     try {
       const text = await summarizeWithAnthropic(
@@ -187,12 +207,8 @@ export async function generateTags(
   onFallback?: (reason: string) => void,
 ): Promise<string[]> {
   const userPrompt = buildSummaryUserPrompt(md, title)
-  if (env.SUMMARY_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
-    console.warn(
-      'SUMMARY_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set, falling back to workers-ai',
-    )
-  }
-  if (env.SUMMARY_PROVIDER === 'anthropic' && env.ANTHROPIC_API_KEY) {
+  const resolved = resolveProvider(env, onFallback)
+  if (resolved === 'anthropic' && env.ANTHROPIC_API_KEY) {
     try {
       const text = await anthropicComplete(
         env.ANTHROPIC_API_KEY,
