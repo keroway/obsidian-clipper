@@ -4333,9 +4333,19 @@ describe('POST /clip - auto tagging', () => {
           url: 'https://unknown-host-xyz.example/a/empty-summary-notify-1',
         }),
       })
-      const body = (await res.json()) as { ok: boolean; summarized: boolean }
+      const body = (await res.json()) as {
+        ok: boolean
+        summarized: boolean
+        summaryFailed?: boolean
+        fetchFailed?: boolean
+        tagsFailed?: boolean
+      }
       expect(body.ok).toBe(true)
       expect(body.summarized).toBe(false)
+      // #440: 失敗フラグは応答にも載る。失敗していないものは省略される。
+      expect(body.summaryFailed).toBe(true)
+      expect(body.fetchFailed).toBeUndefined()
+      expect(body.tagsFailed).toBeUndefined()
       expect(
         notified.some((b) => b.includes('要約失敗')),
         `要約失敗の通知が飛んでいない: ${JSON.stringify(notified)}`,
