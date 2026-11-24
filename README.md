@@ -267,7 +267,7 @@ bunx wrangler secret put ANTHROPIC_API_KEY
 
 Then set `vars.SUMMARY_PROVIDER` in `wrangler.jsonc` to `"anthropic"` and deploy. The default Anthropic model is `claude-haiku-4-5-20251001`. You can override it with `vars.ANTHROPIC_MODEL`.
 
-If the Anthropic route returns 4xx, 5xx, or times out after 30 seconds, the Worker falls back to Workers AI once. If summarization still fails, the clip is still saved.
+If the Anthropic route returns 4xx, 5xx, or times out after 30 seconds, the Worker falls back to Workers AI once and sends a degradation notice to `NOTIFY_WEBHOOK_URL` (if set). If summarization still fails, the clip is still saved.
 
 ### 7. Optional: configure Browser Rendering fallback
 

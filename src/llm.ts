@@ -92,6 +92,8 @@ export async function summarizeWithProvider(
   env: Bindings,
   md: string,
   title: string | undefined,
+  // Anthropic 失敗→workers-ai フォールバック時に分類済みの理由 (describeLlmError) を渡す (#442)。
+  onFallback?: (reason: string) => void,
 ): Promise<string> {
   const workersAiModel =
     env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8'
@@ -118,6 +120,7 @@ export async function summarizeWithProvider(
         'anthropic summarize failed, falling back to workers-ai',
         describeLlmError(e),
       )
+      onFallback?.(describeLlmError(e))
       const fallback = await summarize(env.AI, workersAiModel, md, title)
       if (!fallback) throw new LlmFailure('workers-ai returned empty summary')
       assertSummaryLength('workers-ai', fallback)
@@ -181,6 +184,7 @@ export async function generateTags(
   env: Bindings,
   md: string,
   title: string | undefined,
+  onFallback?: (reason: string) => void,
 ): Promise<string[]> {
   const userPrompt = buildSummaryUserPrompt(md, title)
   if (env.SUMMARY_PROVIDER === 'anthropic' && !env.ANTHROPIC_API_KEY) {
@@ -208,6 +212,7 @@ export async function generateTags(
         'anthropic auto-tag failed, falling back to workers-ai',
         describeLlmError(e),
       )
+      onFallback?.(describeLlmError(e))
     }
   }
   const model = env.SUMMARY_MODEL || '@cf/meta/llama-3.1-8b-instruct-fp8'

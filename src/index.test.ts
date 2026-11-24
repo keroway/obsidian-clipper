@@ -2398,11 +2398,19 @@ describe('summarizeWithProvider', () => {
       SUMMARY_PROVIDER: 'anthropic',
       ANTHROPIC_API_KEY: 'sk-test',
     } as Bindings
-    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+    const onFallback = vi.fn()
+    const result = await summarizeWithProvider(
+      testEnv,
+      'body text',
+      'Title',
+      onFallback,
+    )
 
     expect(result).toBe('fallback summary')
     // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
     expect(run).toHaveBeenCalledTimes(1)
+    // #442: 縮退は分類済みの理由つきで呼び出し側へ通知される。
+    expect(onFallback).toHaveBeenCalledWith('anthropic 500')
   })
 
   // #152: response 欠落/空文字は例外ではなく正常終了として素通りしていたため、
@@ -2805,11 +2813,13 @@ describe('generateTags', () => {
       SUMMARY_PROVIDER: 'anthropic',
       ANTHROPIC_API_KEY: 'sk-test',
     } as Bindings
-    const tags = await generateTags(testEnv, 'body text', 'Title')
+    const onFallback = vi.fn()
+    const tags = await generateTags(testEnv, 'body text', 'Title', onFallback)
 
     expect(tags).toEqual(['fallbackTag'])
     // anthropic が失敗したぶんを workers-ai が 1 回だけ肩代わりする。
     expect(run).toHaveBeenCalledTimes(1)
+    expect(onFallback).toHaveBeenCalledWith('anthropic 500')
   })
 
   // #158: 空応答・記号のみの応答が正常終了扱いになると、呼び出し側の
@@ -4354,6 +4364,85 @@ describe('POST /clip - auto tagging', () => {
       testEnv.NOTIFY_WEBHOOK_URL = originalNotify
       testEnv.ENABLE_SUMMARY = originalEnableSummary
       testEnv.AI = originalAi
+      warnSpy.mockRestore()
+    }
+  })
+
+  /// #442: Anthropic が失敗して workers-ai フォールバックが成功しても、
+  /// 縮退を webhook に通知する。応答本文は載せず、失敗フラグ (summaryFailed) は立てない。
+  it('notifies the webhook when anthropic fails but workers-ai fallback succeeds (#442)', async () => {
+    const testEnv = env as typeof env & {
+      NOTIFY_WEBHOOK_URL?: string
+      ENABLE_SUMMARY?: string
+      SUMMARY_PROVIDER?: string
+      ANTHROPIC_API_KEY?: string
+    }
+    const saved = {
+      notify: testEnv.NOTIFY_WEBHOOK_URL,
+      summary: testEnv.ENABLE_SUMMARY,
+      provider: testEnv.SUMMARY_PROVIDER,
+      key: testEnv.ANTHROPIC_API_KEY,
+      ai: testEnv.AI,
+    }
+    testEnv.AI = {
+      run: async () => ({ response: 'fallback summary' }),
+    } as unknown as typeof testEnv.AI
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const notified: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const u = input.toString()
+      if (u.startsWith('https://r.jina.ai/')) {
+        return new Response(`Title: T\n\n${'article body text '.repeat(20)}`, {
+          status: 200,
+        })
+      }
+      if (u.startsWith('https://webhook.test/')) {
+        notified.push(String((init as RequestInit | undefined)?.body ?? ''))
+        return new Response('ok', { status: 200 })
+      }
+      if (u.startsWith('https://api.anthropic.com/')) {
+        return new Response('LEAK-BODY-442', { status: 404 })
+      }
+      return new Response('upstream error', { status: 500 })
+    })
+
+    testEnv.NOTIFY_WEBHOOK_URL = 'https://webhook.test/notify'
+    testEnv.ENABLE_SUMMARY = 'true'
+    testEnv.SUMMARY_PROVIDER = 'anthropic'
+    testEnv.ANTHROPIC_API_KEY = 'test-key'
+    try {
+      const res = await SELF.fetch('http://example.com/clip', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.SHARED_SECRET}`,
+        },
+        body: JSON.stringify({
+          url: 'https://unknown-host-xyz.example/a/fallback-notify-442-1',
+        }),
+      })
+      const body = (await res.json()) as {
+        ok: boolean
+        summarized: boolean
+        summaryFailed?: boolean
+      }
+      expect(body.ok).toBe(true)
+      expect(body.summarized).toBe(true)
+      expect(body.summaryFailed).toBeUndefined()
+      expect(
+        notified.some(
+          (b) => b.includes('プロバイダ縮退') && b.includes('anthropic 404'),
+        ),
+        `縮退通知が飛んでいない: ${JSON.stringify(notified)}`,
+      ).toBe(true)
+      expect(JSON.stringify(notified)).not.toContain('LEAK-BODY')
+    } finally {
+      testEnv.NOTIFY_WEBHOOK_URL = saved.notify
+      testEnv.ENABLE_SUMMARY = saved.summary
+      testEnv.SUMMARY_PROVIDER = saved.provider
+      testEnv.ANTHROPIC_API_KEY = saved.key
+      testEnv.AI = saved.ai
       warnSpy.mockRestore()
     }
   })
