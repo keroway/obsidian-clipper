@@ -416,6 +416,10 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     bytes: new TextEncoder().encode(body).length,
     summarized: !!summary,
     tags,
+    // 部分成功の可視化 (#440)。失敗が無いときは省略。理由文字列は載せない (ADR 0012)。
+    ...(fetchErr ? { fetchFailed: true } : {}),
+    ...(details.summaryFailed ? { summaryFailed: true } : {}),
+    ...(details.tagsFailed ? { tagsFailed: true } : {}),
   })
 }
 

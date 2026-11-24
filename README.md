@@ -307,6 +307,8 @@ Example response:
 { "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update_a1b2c3d4.md", "bytes": 5824, "summarized": true }
 ```
 
+On partial failure the response is still HTTP 200 / `ok: true`, with boolean flags added only when true: `fetchFailed` (article body could not be fetched), `summaryFailed` (summarization failed), `tagsFailed` (auto-tagging failed). No reason strings are included; see the webhook or `wrangler tail` for details. `summarized: false` alone does not distinguish "disabled / body too short" from a failure.
+
 After the next Remotely Save sync, the note should appear in `Inbox/`.
 
 ### 10. Configure a client
