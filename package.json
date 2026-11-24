@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.5",
-    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/vitest-plugin": "^1.9.0",
     "@cloudflare/workers-types": "^5.20261104.1",
     "@types/bun": "^1.4.4",
     "lefthook": "^2.2.2",
