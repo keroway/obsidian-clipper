@@ -6336,6 +6336,49 @@ describe('POST /clip - structured clip event (ADR 0012)', () => {
     })
   })
 
+  it('flags indexFailed in the response and event when the index write is skipped (#456), and omits it normally', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () => new Response('Title: T\n\nBODY', { status: 200 }),
+    )
+
+    // 正常時は省略される
+    const okRes = await post({ url: 'https://example.com/obs-index-ok-456' })
+    const okBody = (await okRes.json()) as Record<string, unknown>
+    expect(okBody.ok).toBe(true)
+    expect(okBody).not.toHaveProperty('indexFailed')
+    expect(clipEvents(logSpy)[0]).not.toHaveProperty('indexFailed')
+
+    // index を壊すと writeUrlIndexCAS が corrupted でスキップする
+    const indexKey = 'Inbox/.index/urls.json'
+    const previous = await env.VAULT.get(indexKey)
+    const previousBody = previous ? await previous.text() : null
+    await env.VAULT.put(indexKey, '{ this is not valid json')
+    try {
+      const res = await post({ url: 'https://example.com/obs-index-fail-456' })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as Record<string, unknown>
+      expect(body).toMatchObject({
+        ok: true,
+        indexFailed: true,
+        indexFailReason: 'corrupted',
+      })
+      const events = clipEvents(logSpy)
+      expect(events[events.length - 1]).toMatchObject({
+        outcome: 'saved',
+        indexFailed: true,
+        indexFailReason: 'corrupted',
+      })
+    } finally {
+      if (previousBody === null) {
+        await env.VAULT.delete(indexKey)
+      } else {
+        await env.VAULT.put(indexKey, previousBody)
+      }
+    }
+  })
+
   it('reports outcome=error with kind=unknown for a rejected request', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const res = await post({ nothing: true })

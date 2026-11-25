@@ -57,6 +57,9 @@ export type ImageClipResult =
       bytes: number
       embedded: boolean
       noteFailed?: boolean
+      // ノート/画像は保存済みだが重複インデックスの更新に失敗した (#456)
+      indexFailed?: boolean
+      indexFailReason?: 'corrupted' | 'storage-error'
       notePath?: string
       tags?: string[]
     }
@@ -318,6 +321,12 @@ export async function saveImageClip(
     bytes: buf.byteLength,
     embedded: !!embedNote,
     ...(noteFailed ? { noteFailed: true } : {}),
+    ...(indexWritten
+      ? {}
+      : {
+          indexFailed: true,
+          indexFailReason: indexSkipReason ?? ('storage-error' as const),
+        }),
     ...(embedNote
       ? { notePath: embedNote.notePath, tags: embedNote.tags }
       : {}),

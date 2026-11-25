@@ -425,6 +425,10 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     await writeUrlIndexCAS(c.env.VAULT, indexKey, (index) => {
       index[hash] = { path: key, createdAt }
     })
+  if (!indexWritten) {
+    details.indexFailed = true
+    details.indexFailReason = indexSkipReason ?? 'storage-error'
+  }
   if (!indexWritten && c.env.NOTIFY_WEBHOOK_URL) {
     c.executionCtx.waitUntil(
       notifyWebhook(
@@ -444,6 +448,9 @@ async function handleUrlClip(c: AppContext, payload: UrlClipBody) {
     ...(fetchErr ? { fetchFailed: true } : {}),
     ...(details.summaryFailed ? { summaryFailed: true } : {}),
     ...(details.tagsFailed ? { tagsFailed: true } : {}),
+    ...(details.indexFailed
+      ? { indexFailed: true, indexFailReason: details.indexFailReason }
+      : {}),
   })
 }
 
@@ -501,6 +508,13 @@ async function handleImageClip(c: AppContext) {
   if (result.noteFailed) {
     c.set('clipDetails', { ...c.get('clipDetails'), noteFailed: true })
   }
+  if (!result.duplicate && result.indexFailed) {
+    c.set('clipDetails', {
+      ...c.get('clipDetails'),
+      indexFailed: true,
+      indexFailReason: result.indexFailReason,
+    })
+  }
   if (result.duplicate) {
     return c.json({
       ok: false,
@@ -512,13 +526,23 @@ async function handleImageClip(c: AppContext) {
       ...(result.tags ? { tags: result.tags } : {}),
     })
   }
-  const { path, bytes, embedded, noteFailed, notePath, tags } = result
+  const {
+    path,
+    bytes,
+    embedded,
+    noteFailed,
+    indexFailed,
+    indexFailReason,
+    notePath,
+    tags,
+  } = result
   return c.json({
     ok: true,
     path,
     bytes,
     embedded,
     ...(noteFailed ? { noteFailed: true } : {}),
+    ...(indexFailed ? { indexFailed: true, indexFailReason } : {}),
     ...(notePath ? { notePath } : {}),
     ...(tags ? { tags } : {}),
   })

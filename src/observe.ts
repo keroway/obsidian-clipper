@@ -20,6 +20,9 @@ export type ClipDetails = {
   summaryFallback?: boolean
   tagsFallback?: boolean
   noteFailed?: boolean
+  // ノート保存後の重複インデックス更新が失敗した (#456)。理由は固定分類のみ。
+  indexFailed?: boolean
+  indexFailReason?: 'corrupted' | 'storage-error'
 }
 
 export type ClipEvent = ClipDetails & {
