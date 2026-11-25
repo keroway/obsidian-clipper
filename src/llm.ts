@@ -308,6 +308,12 @@ async function anthropicComplete(
     }
     const data = JSON.parse(raw) as {
       content?: Array<{ type: string; text?: string }>
+      stop_reason?: string | null
+    }
+    // max_tokens による打ち切りは未完の文字列を正常出力として保存しないよう失敗扱いにし、
+    // 呼び出し側の workers-ai フォールバックへ渡す (#458)。要約・タグ生成の両方に効く。
+    if (data.stop_reason === 'max_tokens') {
+      throw new LlmFailure('anthropic response truncated (max_tokens)')
     }
     const text = data.content?.find((c) => c.type === 'text')?.text ?? ''
     // JSON の \uD800 エスケープは生バイトとしては正常 UTF-8 なので strictUtf8 では弾けない (#356)
