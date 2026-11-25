@@ -82,6 +82,7 @@
         if (j.fetchFailed) failed.push('本文取得')
         if (j.summaryFailed) failed.push('要約')
         if (j.tagsFailed) failed.push('タグ生成')
+        if (j.indexFailed) failed.push('重複検知インデックス更新')
         if (failed.length) {
           toast('Saved (' + failed.join('・') + '失敗): ' + j.path, false)
         } else {
