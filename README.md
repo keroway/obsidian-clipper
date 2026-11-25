@@ -307,7 +307,7 @@ Example response:
 { "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update_a1b2c3d4.md", "bytes": 5824, "summarized": true }
 ```
 
-On partial failure the response is still HTTP 200 / `ok: true`, with boolean flags added only when true: `fetchFailed` (article body could not be fetched), `summaryFailed` (summarization failed), `tagsFailed` (auto-tagging failed). No reason strings are included; see the webhook or `wrangler tail` for details. `summarized: false` alone does not distinguish "disabled / body too short" from a failure.
+On partial failure the response is still HTTP 200 / `ok: true`, with boolean flags added only when true: `fetchFailed` (article body could not be fetched), `summaryFailed` (summarization failed), `tagsFailed` (auto-tagging failed), `indexFailed` (note saved but the duplicate-detection index update failed; `indexFailReason` is `corrupted` or `storage-error`; also set on image clips). No free-form reason strings are included (only the fixed `indexFailReason` category); see the webhook or `wrangler tail` for details. `summarized: false` alone does not distinguish "disabled / body too short" from a failure.
 
 After the next Remotely Save sync, the note should appear in `Inbox/`.
 
@@ -561,7 +561,7 @@ Each authenticated `POST /clip` emits one structured log line (ADR 0012) to
 Workers Logs (`observability.enabled = true` in `wrangler.jsonc`). Fields:
 `event` (`clip`), `kind` (`url`/`text`/`image`/`unknown`), `outcome`
 (`saved`/`duplicate`/`error`), `status`, `durationMs`, and for URL clips `host`,
-`fetchVia`, `fetchFailed`, `summaryFailed`, `tagsFailed`. URL paths/queries,
+`fetchVia`, `fetchFailed`, `summaryFailed`, `tagsFailed`, and (URL/image) `indexFailed` / `indexFailReason`. URL paths/queries,
 titles, bodies, tags and credentials are never logged.
 
 To check: Cloudflare dashboard → Workers → obsidian-clipper → Observability, then

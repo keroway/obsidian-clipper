@@ -307,7 +307,7 @@ curl -X POST https://obsidian-clipper.<your-subdomain>.workers.dev/clip \
 { "ok": true, "path": "MyVault/Inbox/2026-05-21_123456_Workers-AI-Update_a1b2c3d4.md", "bytes": 5824, "summarized": true }
 ```
 
-部分的に失敗した場合も HTTP 200 / `ok: true` のままで、真のときだけ真偽値フラグが追加されます: `fetchFailed` (本文取得失敗)、`summaryFailed` (要約失敗)、`tagsFailed` (タグ生成失敗)。理由文字列は含まれません。詳細は Webhook か `wrangler tail` で確認してください。`summarized: false` だけでは、要約が無効・本文が短いケースと失敗を区別できません。
+部分的に失敗した場合も HTTP 200 / `ok: true` のままで、真のときだけ真偽値フラグが追加されます: `fetchFailed` (本文取得失敗)、`summaryFailed` (要約失敗)、`tagsFailed` (タグ生成失敗)、`indexFailed` (ノートは保存済みだが重複検知インデックスの更新に失敗。`indexFailReason` は `corrupted` か `storage-error`。画像クリップでも付与)。自由形式の理由文字列は含まれません (固定分類の `indexFailReason` のみ)。詳細は Webhook か `wrangler tail` で確認してください。`summarized: false` だけでは、要約が無効・本文が短いケースと失敗を区別できません。
 
 次回の Remotely Save 同期後、`Inbox/` にノートが表示されます。
 
