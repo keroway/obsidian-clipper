@@ -52,7 +52,8 @@ X / Safari / その他アプリの共有シートから 1 タップで Worker �
 - 続けて同じ入力からキー `ok`・`path`・`error` も、それぞれ別アクションで取得する
   (`error` はエラー応答のときだけ入る)
 - さらに部分失敗フラグ `fetchFailed`(本文取得失敗)・`summaryFailed`(要約失敗)・
-  `tagsFailed`(タグ生成失敗)も、それぞれ別アクションで取得する
+  `tagsFailed`(タグ生成失敗)・`indexFailed`(重複検知インデックスの更新失敗。
+  理由は `indexFailReason`)も、それぞれ別アクションで取得する
   (部分失敗のときだけ `true` で入り、通常成功では存在しない)
 
 ### (6) `If` で結果を分岐して `通知を表示` (任意)
@@ -64,7 +65,7 @@ X / Safari / その他アプリの共有シートから 1 タップで Worker �
 - `duplicate` が `true`: 通知
     - タイトル: `Already saved`
     - 本文: (5) で取った `path`(既存ノートのパス)
-- それ以外で `ok` が `true`: さらに `fetchFailed`・`summaryFailed`・`tagsFailed` を確認する
+- それ以外で `ok` が `true`: さらに `fetchFailed`・`summaryFailed`・`tagsFailed`・`indexFailed` を確認する
   (部分失敗でも HTTP 200 / `ok: true` でノートは保存済み)
     - いずれも `true` でない: 通知
         - タイトル: `Saved to Obsidian`
@@ -72,7 +73,9 @@ X / Safari / その他アプリの共有シートから 1 タップで Worker �
     - 1 つ以上が `true`: 通知
         - タイトル: `Saved with issues`
         - 本文: `path` に続けて、`true` のフラグに対応する失敗を併記する
-          (例: `本文取得に失敗` / `要約に失敗` / `タグ生成に失敗`。複数なら全て並べる)
+          (例: `本文取得に失敗` / `要約に失敗` / `タグ生成に失敗` / `重複検知インデックスの更新に失敗`。
+          複数なら全て並べる。`indexFailed` はノート保存済みだが、次回の同一 URL 再クリップを
+          重複と判定できないことを示す)
 - それ以外(`ok` が `false` かつ重複でない): 通知
     - タイトル: `Save failed`
     - 本文: (5) で取った `error`(保存されていない)
@@ -85,6 +88,7 @@ X / Safari / その他アプリの共有シートから 1 タップで Worker �
 | `ok: true`、`fetchFailed: true`                   | `Saved with issues` | `path` + 本文取得に失敗       |
 | `ok: true`、`summaryFailed: true`                 | `Saved with issues` | `path` + 要約に失敗           |
 | `ok: true`、`tagsFailed: true`                    | `Saved with issues` | `path` + タグ生成に失敗       |
+| `ok: true`、`indexFailed: true`                   | `Saved with issues` | `path` + インデックス更新に失敗 |
 | `ok: true`、複数フラグが `true`                   | `Saved with issues` | `path` + 該当する失敗を全て   |
 | `ok: false`、`duplicate: true`                    | `Already saved`     | 既存の `path`                 |
 | `ok: false`(重複でない。例: `invalid url`)      | `Save failed`       | `error`                       |
