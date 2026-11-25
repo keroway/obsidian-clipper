@@ -58,6 +58,38 @@ describe('bookmarklet の結果表示', () => {
     ])
   })
 
+  it.each(['storage-error', 'corrupted'])(
+    'indexFailed (%s) が真なら保存済みとインデックス更新失敗を警告色で表示する',
+    async (reason) => {
+      const t = await run(
+        200,
+        JSON.stringify({
+          ok: true,
+          path: 'Inbox/example.md',
+          indexFailed: true,
+          indexFailReason: reason,
+        }),
+      )
+      expect(t).toEqual([
+        {
+          text: 'Saved (重複検知インデックス更新失敗): Inbox/example.md',
+          background: '#dc2626',
+        },
+      ])
+    },
+  )
+
+  it('indexFailed が他の部分失敗フラグと併発してもまとめて表示する', async () => {
+    const t = await run(
+      200,
+      '{"ok":true,"path":"Inbox/example.md","summaryFailed":true,"indexFailed":true}',
+    )
+    expect(t[0].text).toBe(
+      'Saved (要約・重複検知インデックス更新失敗): Inbox/example.md',
+    )
+    expect(t[0].background).toBe('#dc2626')
+  })
+
   it('複数の部分失敗フラグをまとめて表示する', async () => {
     const t = await run(
       200,
