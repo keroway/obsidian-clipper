@@ -41,6 +41,34 @@ describe('bookmarklet の結果表示', () => {
     ])
   })
 
+  it.each([
+    ['fetchFailed', '本文取得'],
+    ['summaryFailed', '要約'],
+    ['tagsFailed', 'タグ生成'],
+  ])('%s が真なら保存済みと失敗内容を警告色で表示する', async (flag, label) => {
+    const t = await run(
+      200,
+      JSON.stringify({ ok: true, path: 'Inbox/example.md', [flag]: true }),
+    )
+    expect(t).toEqual([
+      {
+        text: `Saved (${label}失敗): Inbox/example.md`,
+        background: '#dc2626',
+      },
+    ])
+  })
+
+  it('複数の部分失敗フラグをまとめて表示する', async () => {
+    const t = await run(
+      200,
+      '{"ok":true,"path":"Inbox/example.md","fetchFailed":true,"summaryFailed":true,"tagsFailed":true}',
+    )
+    expect(t[0].text).toBe(
+      'Saved (本文取得・要約・タグ生成失敗): Inbox/example.md',
+    )
+    expect(t[0].background).toBe('#dc2626')
+  })
+
   it('重複応答は Already saved を表示する', async () => {
     const t = await run(200, '{"ok":true,"duplicate":true,"path":"Inbox/x.md"}')
     expect(t[0].text).toBe('Already saved: Inbox/x.md')
