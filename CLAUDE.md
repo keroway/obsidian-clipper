@@ -37,7 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   切替は実装済みで、`SUMMARY_PROVIDER=anthropic` かつこのキーがある場合のみ Anthropic を使い、
   どちらかが欠けると Workers AI にフォールバックする (`src/llm.ts`)
 
-テストは vitest + `@cloudflare/vitest-pool-workers` で導入済み（`src/index.test.ts`）。追加テストを書く場合は同ファイルを参照。
+テストは vitest + `@cloudflare/vitest-plugin` で導入済み（`src/index.test.ts`）。追加テストを書く場合は同ファイルを参照。
 
 **wrangler 設定の使い分け**: 本番 / dev 用は `wrangler.jsonc`、vitest 用は `wrangler.test.jsonc`（`vitest.config.ts` が `configPath` で参照）。メイン設定の `bucket_name` はプレースホルダのままなのでそのままではバリデーションに落ちるため、テスト用にダミーのバケット名・vars を差し替えた別ファイルにしている。R2 へは接続せず Miniflare がローカルでモックする。バインディングや vars を追加したら **両方の jsonc を更新**すること。
 
@@ -89,6 +89,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `src/text-clip.ts` — テキスト/Markdown クリップの本文生成 + R2 書き込み (ADR 0011)
   - `src/image-clip.ts` — 画像クリップの multipart パース・重複検知・R2 書き込み・インデックス更新 (CAS)・埋め込みノート生成 (ADR 0011)
   - `src/attachment.ts` — 画像添付の MIME/サイズ検証 (ADR 0011)
+  - `src/json-body.ts` — JSON 経路のリクエストボディを上限付きで読み取り・UTF-8 fatal 検証して解析 (`readJsonWithLimit` / `readBodyWithLimit`, #237)
+  - `src/multipart-utf8.ts` — 画像クリップ (multipart) の文字列パートが不正 UTF-8 を含まないかを生バイト列で検証 (#331)
+  - `src/bounded-body.ts` — 外部 API 応答本文を上限付きで読む (`readTextWithLimit`) / 読まない本文の cancel (`releaseBody`) (#222, #270)
+  - `src/error-body.ts` — 非 2xx 応答本文の先頭だけを上限付きで読みエラー詳細にする (`readErrorSnippet`, #225)
   - `src/llm.ts` — 要約・タグ生成 (Workers AI / Anthropic 呼び出し)
   - `src/prompts.ts` — 要約・タグ生成のプロンプト定数 (`scripts/compare-summary-models.ts` と共有)
   - `src/tags.ts` — タグ正規化・統合・ホスト名 allowlist
