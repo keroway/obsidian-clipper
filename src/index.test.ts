@@ -2490,6 +2490,85 @@ describe('summarizeWithProvider', () => {
     expect(run).toHaveBeenCalledTimes(1)
   })
 
+  // #458: stop_reason=max_tokens の未完要約は成功扱いにせず workers-ai へフォールバックする。
+  // end_turn は従来通り Anthropic の結果を採用し、代替も失敗する場合は throw する。
+  it('falls back to workers-ai when anthropic stops with max_tokens (#458)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'This summary is cut off because' }],
+          stop_reason: 'max_tokens',
+        }),
+        { status: 200 },
+      )
+    })
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const onFallback = vi.fn()
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(
+      testEnv,
+      'body text',
+      'Title',
+      onFallback,
+    )
+
+    expect(result).toBe('fallback summary')
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(onFallback).toHaveBeenCalledWith(
+      'anthropic response truncated (max_tokens)',
+    )
+  })
+
+  it('keeps the anthropic summary when stop_reason is end_turn (#458)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'complete summary' }],
+          stop_reason: 'end_turn',
+        }),
+        { status: 200 },
+      )
+    })
+
+    const { env, run } = workersAiEnv('fallback summary')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const result = await summarizeWithProvider(testEnv, 'body text', 'Title')
+
+    expect(result).toBe('complete summary')
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('throws when anthropic stops with max_tokens and the workers-ai fallback is empty (#458)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'cut off' }],
+          stop_reason: 'max_tokens',
+        }),
+        { status: 200 },
+      )
+    })
+
+    const { env } = workersAiEnv('')
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    await expect(
+      summarizeWithProvider(testEnv, 'body text', 'Title'),
+    ).rejects.toThrow(/workers-ai returned empty summary/)
+  })
+
   // #349: Anthropic 成功応答の不正 UTF-8 は U+FFFD 置換で成功扱いにせず、
   // 失敗として workers-ai へフォールバックする。要約・タグの両方を確認する。
   it('falls back to workers-ai when anthropic returns invalid UTF-8 (summary and tags)', async () => {
@@ -2908,6 +2987,34 @@ describe('generateTags', () => {
 
     expect(tags).toEqual(['fallbackTag'])
     expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  // #458: max_tokens で打ち切られたタグ列 (末尾が欠けうる) も失敗として workers-ai へ落とす。
+  it('falls back to workers-ai when anthropic tags stop with max_tokens (#458)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'alpha, be' }],
+          stop_reason: 'max_tokens',
+        }),
+        { status: 200 },
+      )
+    })
+
+    const { env, run } = workersAiEnv('fallbackTag')
+    const onFallback = vi.fn()
+    const testEnv = {
+      ...env,
+      SUMMARY_PROVIDER: 'anthropic',
+      ANTHROPIC_API_KEY: 'sk-test',
+    } as Bindings
+    const tags = await generateTags(testEnv, 'body text', 'Title', onFallback)
+
+    expect(tags).toEqual(['fallbackTag'])
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(onFallback).toHaveBeenCalledWith(
+      'anthropic response truncated (max_tokens)',
+    )
   })
 
   it('throws when both anthropic and the workers-ai fallback return no usable tags', async () => {
