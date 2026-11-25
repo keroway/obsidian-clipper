@@ -78,7 +78,15 @@
         return
       }
       if (ok && j && j.ok === true && typeof j.path === 'string' && j.path) {
-        toast('Saved: ' + j.path, true)
+        const failed = []
+        if (j.fetchFailed) failed.push('本文取得')
+        if (j.summaryFailed) failed.push('要約')
+        if (j.tagsFailed) failed.push('タグ生成')
+        if (failed.length) {
+          toast('Saved (' + failed.join('・') + '失敗): ' + j.path, false)
+        } else {
+          toast('Saved: ' + j.path, true)
+        }
         return
       }
       const detail = j ? JSON.stringify(j) : body.slice(0, 200)
