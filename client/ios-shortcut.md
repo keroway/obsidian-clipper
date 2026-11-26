@@ -153,31 +153,39 @@ Worker は画像を `Attachments/` に保存し、レスポンスの `path`(画�
 ### 画像クリップの結果通知 (任意)
 
 URL クリップの (5)(6) と同様に、`(4)` の出力から `辞書から値を取得` で
-`ok`・`duplicate`・`embedded`・`noteFailed`・`path`・`notePath`・`error` を
-それぞれ別アクションで取得し(`noteFailed` は部分失敗のときだけ `true` で入る)、
+`ok`・`duplicate`・`embedded`・`noteFailed`・`indexFailed`・`path`・`notePath`・`error` を
+それぞれ別アクションで取得し(`noteFailed`・`indexFailed` は部分失敗のときだけ `true` で入る)、
 `If` で次の順に分岐して `通知を表示` する。
-画像クリップの重複応答は URL クリップと異なり `ok: true` のまま `duplicate: true` を返すため、
-`ok` より先に `noteFailed` と `duplicate` を判定する。
+画像クリップの重複応答も URL クリップと同じく HTTP 200 のまま `ok: false` / `duplicate: true` を返す
+(既存の画像 `path` あり)。`ok` だけでは重複とエラーを区別できないため、`ok` より先に
+`duplicate` を判定する。`noteFailed` は重複でも新規保存でも付くので、通常表示より先に扱う。
 (画像と埋め込みノートの保存失敗は `fetchFailed` 等の URL 用フラグでは表されない。)
 
-- `noteFailed` が `true`: 通知
-    - タイトル: `Image saved, note failed`
-    - 本文: `path`(画像は保存済みだが埋め込みノートの保存に失敗。`duplicate` が `true` でも同じ)
-- それ以外で `duplicate` が `true`:
+- `duplicate` が `true`(画像は既存で、新規保存はされない):
+    - `noteFailed` が `true`: タイトル `Already saved, note failed`、本文 `path`
+      (埋め込みノートの生成を試みたが保存に失敗)
     - `embedded` が `true`: タイトル `Already saved, note created`、本文 `notePath`
       (画像は既存だが、新しい埋め込みノートを生成した)
     - それ以外: タイトル `Already saved`、本文 `path`(画像のみ重複。ノートは生成していない)
-- それ以外で `ok` が `true`:
-    - `embedded` が `true`: タイトル `Saved to Obsidian`、本文 `path` と `notePath`
-    - それ以外: タイトル `Saved to Obsidian`、本文 `path`(画像のみ保存)
-- それ以外: タイトル `Save failed`、本文 `error`(保存されていない)
+- それ以外で `ok` が `true`(画像は保存済み。部分失敗でも HTTP 200 / `ok: true`):
+    - `noteFailed`・`indexFailed` のどちらも `true` でない:
+        - `embedded` が `true`: タイトル `Saved to Obsidian`、本文 `path` と `notePath`
+        - それ以外: タイトル `Saved to Obsidian`、本文 `path`(画像のみ保存)
+    - 1 つ以上が `true`: タイトル `Saved with issues`、本文 `path` に続けて
+      `true` のフラグに対応する失敗を併記する
+      (`noteFailed` = `ノート保存に失敗`、`indexFailed` = `重複検知インデックスの更新に失敗`。
+      両方なら全て並べる。`noteFailed` のとき `notePath` は無い。
+      `indexFailed` は画像保存済みだが、次回の同一画像の再クリップを重複と判定できないことを示す)
+- それ以外(`ok` が `false` かつ重複でない): タイトル `Save failed`、本文 `error`(保存されていない)
 
-| 応答                                              | タイトル                    | 本文                |
-|---------------------------------------------------|-----------------------------|---------------------|
-| `ok: true`、`embedded: false`                     | `Saved to Obsidian`         | `path`              |
-| `ok: true`、`embedded: true`                      | `Saved to Obsidian`         | `path` + `notePath` |
-| `ok: true`、`noteFailed: true`                    | `Image saved, note failed`  | `path`              |
-| `duplicate: true`、`embedded: false`              | `Already saved`             | `path`              |
-| `duplicate: true`、`embedded: true`               | `Already saved, note created` | `notePath`        |
-| `duplicate: true`、`noteFailed: true`             | `Image saved, note failed`  | `path`              |
-| `ok: false`(重複でない)                         | `Save failed`               | `error`             |
+| 応答                                              | タイトル                      | 本文                |
+|---------------------------------------------------|-------------------------------|---------------------|
+| `ok: true`、`embedded: false`、フラグなし         | `Saved to Obsidian`           | `path`              |
+| `ok: true`、`embedded: true`、フラグなし          | `Saved to Obsidian`           | `path` + `notePath` |
+| `ok: true`、`noteFailed: true`                    | `Saved with issues`           | `path` + ノート保存に失敗 |
+| `ok: true`、`indexFailed: true`                   | `Saved with issues`           | `path` + インデックス更新に失敗 |
+| `ok: true`、両方のフラグが `true`                 | `Saved with issues`           | `path` + 該当する失敗を全て |
+| `ok: false`、`duplicate: true`、`embedded: false` | `Already saved`               | `path`              |
+| `ok: false`、`duplicate: true`、`embedded: true`  | `Already saved, note created` | `notePath`          |
+| `ok: false`、`duplicate: true`、`noteFailed: true`| `Already saved, note failed`  | `path`              |
+| `ok: false`(重複でない。例: `invalid` 系エラー)  | `Save failed`                 | `error`             |
