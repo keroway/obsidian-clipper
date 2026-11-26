@@ -149,3 +149,35 @@ Worker は画像を `Attachments/` に保存し、レスポンスの `path`(画�
 `embedded`(ノートを生成したか)・`notePath`(ノート生成に成功したときのパス) を返す。
 ノートの保存だけ失敗した場合は `embedded: false` / `noteFailed: true` の部分成功
 (画像の `path` は返り、`notePath` は無い) になる。
+
+### 画像クリップの結果通知 (任意)
+
+URL クリップの (5)(6) と同様に、`(4)` の出力から `辞書から値を取得` で
+`ok`・`duplicate`・`embedded`・`noteFailed`・`path`・`notePath`・`error` を
+それぞれ別アクションで取得し(`noteFailed` は部分失敗のときだけ `true` で入る)、
+`If` で次の順に分岐して `通知を表示` する。
+画像クリップの重複応答は URL クリップと異なり `ok: true` のまま `duplicate: true` を返すため、
+`ok` より先に `noteFailed` と `duplicate` を判定する。
+(画像と埋め込みノートの保存失敗は `fetchFailed` 等の URL 用フラグでは表されない。)
+
+- `noteFailed` が `true`: 通知
+    - タイトル: `Image saved, note failed`
+    - 本文: `path`(画像は保存済みだが埋め込みノートの保存に失敗。`duplicate` が `true` でも同じ)
+- それ以外で `duplicate` が `true`:
+    - `embedded` が `true`: タイトル `Already saved, note created`、本文 `notePath`
+      (画像は既存だが、新しい埋め込みノートを生成した)
+    - それ以外: タイトル `Already saved`、本文 `path`(画像のみ重複。ノートは生成していない)
+- それ以外で `ok` が `true`:
+    - `embedded` が `true`: タイトル `Saved to Obsidian`、本文 `path` と `notePath`
+    - それ以外: タイトル `Saved to Obsidian`、本文 `path`(画像のみ保存)
+- それ以外: タイトル `Save failed`、本文 `error`(保存されていない)
+
+| 応答                                              | タイトル                    | 本文                |
+|---------------------------------------------------|-----------------------------|---------------------|
+| `ok: true`、`embedded: false`                     | `Saved to Obsidian`         | `path`              |
+| `ok: true`、`embedded: true`                      | `Saved to Obsidian`         | `path` + `notePath` |
+| `ok: true`、`noteFailed: true`                    | `Image saved, note failed`  | `path`              |
+| `duplicate: true`、`embedded: false`              | `Already saved`             | `path`              |
+| `duplicate: true`、`embedded: true`               | `Already saved, note created` | `notePath`        |
+| `duplicate: true`、`noteFailed: true`             | `Image saved, note failed`  | `path`              |
+| `ok: false`(重複でない)                         | `Save failed`               | `error`             |
